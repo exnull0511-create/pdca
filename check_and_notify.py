@@ -31,8 +31,8 @@ DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "")
 DB_SLIM_PATH    = os.environ.get("DB_SLIM_PATH", "data/S級デビーslim.xlsx")
 DB_OLD_PATH     = os.environ.get("DB_OLD_PATH",  r"data/S級選手究極DB(1).xlsx")
 
-NOTIFY_BEFORE_MIN = 5    # 締切N分前〜(N+25)分前のレースを対象
-WINDOW_SPAN_MIN   = 25   # 通知ウィンドウ幅（30分サイクルより少し広め）
+NOTIFY_BEFORE_MIN = 5    # 締切N分前〜(N+18)分前のレースを対象
+WINDOW_SPAN_MIN   = 18   # 通知ウィンドウ幅（20分サイクルより少し短め、重複防止）
 BET_BASE          = 100
 
 STRATEGY_CFG = dict(
