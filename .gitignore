@@ -1,0 +1,16 @@
+﻿*.pyc
+__pycache__/
+iteration_1_logs*.txt
+predict_*.txt
+predict_*.csv
+pnl_*.png
+grid_search_results.csv
+
+# 一時・テスト・調査用スクリプト
+_tmp_*.py
+_inspect_*.py
+_test_*.py
+_debug_*.py
+
+# ローカルのみの大きいDB
+data/S級選手究極DB*.xlsx

@@ -1,0 +1,36 @@
+name: 競輪予想 自動通知
+
+on:
+  schedule:
+    # 30分おきに実行 / JST 9:00〜21:00 = UTC 0:00〜12:00
+    - cron: '0,30 0-12 * * *'
+  workflow_dispatch:    # 手動実行ボタン（テスト用）
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ① リポジトリをチェックアウト（data/ フォルダ含む）
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ② Python セットアップ
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # ③ 依存パッケージインストール
+      - name: Install dependencies
+        run: pip install -r requirements_cloud.txt
+
+      # ④ 予想 & Discord通知
+      - name: Run prediction and notify Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DB_SLIM_PATH: data/S級DB_slim.xlsx
+          DB_OLD_PATH:  data/S級選手究極DB(1).xlsx
+        run: python check_and_notify.py
