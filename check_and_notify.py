@@ -247,9 +247,15 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
     ranked = sorted(player_scores.items(), key=lambda x: x[1]['ev'], reverse=True)
     if len(ranked) < 3: return None
 
-    is_chaos = sum(1 for _,d in player_scores.items() if d['ip']>=5.5 and
-                   num_to_line.get(list(player_scores.keys())[0], 0) == 0) >= 2
-    top_ev   = ranked[0][1]['ev']
+    # カオス判定: ライン先頭でIP≥5.5の選手が2人以上 → チャオス展開
+    strong_leaders = [
+        n for n, d in player_scores.items()
+        if d['ip'] >= 5.5
+        and line_map.get(num_to_line.get(n, 0), [None])[0] == n
+    ]
+    is_chaos = len(strong_leaders) >= 2
+
+    top_ev = ranked[0][1]['ev']
     if top_ev < STRATEGY_CFG['min_top_ev']: return None
     if is_chaos and STRATEGY_CFG['skip_chaos']: return None
 
