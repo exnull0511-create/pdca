@@ -30,15 +30,17 @@ def _ensure_file():
 
 
 def log_bet(race_id: str, venue: str, race_no: int, race_name: str,
-            start_time: datetime, bets: list[tuple[str, int]], total: int):
+            start_time: datetime, bets: list[tuple[str, int]], total: int,
+            status: str = "pending", deadline_str: str = ""):
     """
     買い予測を記録する。同一 race_id が既にある場合は上書きしない。
+    status: "candidate"(Phase1候補) / "pending"(Phase2確定済み)
     """
     _ensure_file()
 
-    # 既に記録済みなら何もしない
+    # 既に pending/hit/miss/candidate で記録済みなら何もしない
     existing = _load_all()
-    if any(r["race_id"] == race_id for r in existing):
+    if any(r["race_id"] == race_id and r["status"] in ("pending","hit","miss","candidate") for r in existing):
         print(f"   [log_bet] {race_id} は既に記録済みスキップ")
         return
 
@@ -54,11 +56,12 @@ def log_bet(race_id: str, venue: str, race_no: int, race_name: str,
         "result_combo": "",
         "payout":       0,
         "profit":       -total,
-        "status":       "pending",
+        "status":       status,
     }
     with open(BETS_LOG, "a", newline="", encoding="utf-8") as f:
         csv.DictWriter(f, fieldnames=COLUMNS).writerow(row)
-    print(f"   ✅ bet記録: {venue} {race_no}R  {len(bets)}点  ¥{total:,}")
+    tag = "🔍候補" if status == "candidate" else "✅bet"
+    print(f"   {tag} 記録: {venue} {race_no}R  {len(bets)}点  ¥{total:,}")
 
 
 def update_result(race_id: str, result_combo: str, payout: int):
@@ -116,6 +119,45 @@ def get_pending_races() -> list[dict]:
         except Exception:
             pass
     return result
+
+
+def get_candidates() -> list[dict]:
+    """今日のstatus=candidateのレースを返す（Phase2で最終確認する対象）"""
+    _ensure_file()
+    today = date.today().isoformat()
+    return [r for r in _load_all()
+            if r["date"] == today and r["status"] == "candidate"]
+
+
+def confirm_candidate(race_id: str, bets: list[tuple[str, int]], total: int) -> bool:
+    """
+    candidate → pending に昇格（Phase2で勝負確定時）。
+    買い目・配分がPhase2の最終オッズで更新される。
+    """
+    rows = _load_all()
+    for r in rows:
+        if r["race_id"] == race_id and r["status"] == "candidate":
+            r["bets_json"]  = json.dumps([[c, a] for c, a in bets], ensure_ascii=False)
+            r["total_bet"]  = total
+            r["profit"]     = -total
+            r["status"]     = "pending"
+            _save_all(rows)
+            print(f"   ✅ candidate→pending: {race_id}")
+            return True
+    return False
+
+
+def cancel_candidate(race_id: str) -> bool:
+    """candidate → cancelled に変更（Phase2で落第した場合）"""
+    rows = _load_all()
+    for r in rows:
+        if r["race_id"] == race_id and r["status"] == "candidate":
+            r["status"] = "cancelled"
+            r["profit"]  = 0   # キャンセルなので損益なし
+            _save_all(rows)
+            print(f"   ⏭️  cancelled: {race_id}")
+            return True
+    return False
 
 
 def get_daily_summary(target_date: str | None = None) -> dict:

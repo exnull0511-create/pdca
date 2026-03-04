@@ -21,10 +21,12 @@ WEBHOOK_PAID  = os.environ.get("DISCORD_WEBHOOK_URL", "")
 WEBHOOK_FREE  = os.environ.get("DISCORD_WEBHOOK_FREE", "")
 
 # Discord Embed カラー
-COLOR_BET  = 0x00b4d8  # シアン（買い推奨）
-COLOR_SKIP = 0x6c757d  # グレー（スキップ）
-COLOR_HIT  = 0x2dc653  # グリーン（的中）
-COLOR_MISS = 0xe63946  # レッド（ハズレ）
+COLOR_BET       = 0x00b4d8  # シアン（買い推奨）
+COLOR_CANDIDATE = 0xffd166  # オレンジ（Phase1候補）
+COLOR_SKIP      = 0x6c757d  # グレー（スキップ）
+COLOR_CANCEL    = 0xff9f43  # オレンジ系（キャンセル）
+COLOR_HIT       = 0x2dc653  # グリーン（的中）
+COLOR_MISS      = 0xe63946  # レッド（ハズレ）
 
 
 def _post_webhook(url: str, payload: dict) -> bool:
@@ -131,6 +133,90 @@ def send_skip(
     # スキップはコンソールのみ（Discordには送らない）
     print(f"⏭️  [{venue} {race_no}R {race_name}] {reason}")
     return True
+
+
+def send_candidate(
+    venue: str,
+    race_no: int,
+    race_name: str,
+    start_str: str,
+    deadline_str: str,
+    mins_left: int,
+    lines: list[dict],
+    result: dict,
+) -> bool:
+    """
+    Phase1候補通知（締切8〜13分前）。
+    「最終確認中」バッジ付きで载せる。
+    """
+    line_text = ""
+    for li in lines:
+        bibs_str = " → ".join(str(b) for b in li['bibs'])
+        line_text += f"> ライン{li['line']}: **{bibs_str}**\n"
+    if not line_text:
+        line_text = "> (ライン情報なし)\n"
+
+    embed = {
+        "title": f"🔍  {venue}  {race_no}R  {race_name}  [最終確認中]",
+        "color": COLOR_CANDIDATE,
+        "description": (
+            f"🕒 **発走** {start_str}　**締切** {deadline_str}（あと **{mins_left}分**）\n"
+            f"⚠️ Phase1判定通過 — {mins_left-6}〜{mins_left-3}分後に最終オッズで再判定します"
+        ),
+        "fields": [
+            {
+                "name": "📋 ライン構成",
+                "value": line_text.strip(),
+                "inline": False,
+            },
+            {
+                "name": "⚙️ 軸候補",
+                "value": (
+                    f"> 軸: **{result['axis']}**\n"
+                    f"> 軸EV: `{result.get('axis_ev', result['top_ev']):.1f}`"
+                ),
+                "inline": True,
+            },
+        ],
+        "footer": {
+            "text": f"自動予想 Phase1 • {datetime.now().strftime('%H:%M')}"
+        },
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+    payload = {
+        "username": "競輪予想Bot",
+        "avatar_url": "https://cdn-icons-png.flaticon.com/512/3176/3176369.png",
+        "embeds": [embed],
+    }
+    return _post_webhook(WEBHOOK_PAID, payload)
+
+
+def send_cancel(
+    venue: str, race_no: int, race_name: str,
+    start_str: str, deadline_str: str, reason: str
+) -> bool:
+    """
+    Phase2キャンセル通知。
+    Phase1で候補だったレースが最終オッズで落第したときに送信。
+    """
+    embed = {
+        "title": f"⏭️  {venue}  {race_no}R  {race_name}  [キャンセル]",
+        "color": COLOR_CANCEL,
+        "description": (
+            f"🕒 **発走** {start_str}　**締切** {deadline_str}\n"
+            f"⚠️ Phase2最終オッズで落第— {reason}"
+        ),
+        "footer": {
+            "text": f"自動予想 Phase2キャンセル • {datetime.now().strftime('%H:%M')}"
+        },
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+    payload = {
+        "username": "競輪予想Bot",
+        "avatar_url": "https://cdn-icons-png.flaticon.com/512/3176/3176369.png",
+        "embeds": [embed],
+    }
+    return _post_webhook(WEBHOOK_PAID, payload)
 
 
 def send_race_result(
