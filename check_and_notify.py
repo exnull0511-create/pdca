@@ -293,9 +293,11 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
         alloc = [max(int(x),100) for x in a100]
 
     return {
-        'venue': venue, 'race_no': race_no, 'top_ev': top_ev,
-        'axis': f"車番{axis_num} {player_scores[axis_num]['name']}",
-        'bets': list(zip(bets, alloc)), 'total': sum(alloc),
+        'venue': venue, 'race_no': race_no,
+        'top_ev':  top_ev,                             # フィルター用（ランキング1位EV）
+        'axis_ev': player_scores[axis_num]['ev'],      # 軸選手の実EV
+        'axis':    f"車番{axis_num} {player_scores[axis_num]['name']}",
+        'bets':    list(zip(bets, alloc)), 'total': sum(alloc),
     }
 
 # ── Discord 通知は send_discord.py に失買──────────────────────────────────────────

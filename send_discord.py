@@ -90,7 +90,8 @@ def send_prediction(
                 "name": "⚙️ 予想",
                 "value": (
                     f"> 軸: **{result['axis']}**\n"
-                    f"> EV スコア: `{result['top_ev']:.1f}`"
+                    f"> 軸EV: `{result.get('axis_ev', result['top_ev']):.1f}`  "
+                    f"(最高EV: `{result['top_ev']:.1f}`)"
                 ),
                 "inline": True,
             },
