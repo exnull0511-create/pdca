@@ -132,36 +132,89 @@ def send_skip(
     return True
 
 
-def send_result_summary(hits: list[dict], misses: list[dict]) -> bool:
+def send_race_result(
+    venue: str, race_no: int, race_name: str,
+    result_combo: str, payout: int,
+    hit: bool, profit: int, total_today: int,
+) -> bool:
     """
-    当日の予想結果サマリーを無料チャンネルに送る（実績公開）。
+    レース1件の結果（的中/外れ）をDiscordに通知する。
 
-    hits  : [{'venue','race_no','combo','odds','profit'}, ...]
-    misses: [{'venue','race_no','combo'}, ...]
+    Args:
+        result_combo: 実際の着順 (例: "5-1-7")
+        payout: 払戻金額（的中時のみ）
+        hit: 的中したか
+        profit: このレースの収支
+        total_today: 本日累計収支
     """
-    total_profit = sum(h.get('profit', 0) for h in hits)
-    color = COLOR_HIT if total_profit >= 0 else COLOR_MISS
+    color = COLOR_HIT if hit else COLOR_MISS
+    icon  = "🎊 的中！" if hit else "💀 外れ"
 
-    hit_text  = "\n".join(f"✅ {h['venue']} {h['race_no']}R  `{h['combo']}`  {h['odds']}倍  +¥{h['profit']:,}" for h in hits) or "なし"
-    miss_text = "\n".join(f"❌ {m['venue']} {m['race_no']}R  `{m.get('combo','?')}`" for m in misses) or "なし"
+    profit_str  = f"{'+'if profit>=0 else ''}¥{profit:,}"
+    today_str   = f"{'+'if total_today>=0 else ''}¥{total_today:,}"
+
+    fields = [
+        {
+            "name": "🏁 確定着順",
+            "value": f"> `{result_combo}`" + (f"  **{payout:,}円**" if hit else ""),
+            "inline": True,
+        },
+        {
+            "name": "💰 収支",
+            "value": f"> このレース: **{profit_str}**\n> 本日累計: **{today_str}**",
+            "inline": True,
+        },
+    ]
 
     embed = {
-        "title": f"📊 本日の予想結果",
+        "title": f"{icon}  {venue}  {race_no}R  {race_name}",
         "color": color,
-        "fields": [
-            {"name": f"🎯 的中 ({len(hits)}件)", "value": hit_text, "inline": False},
-            {"name": f"💀 ハズレ ({len(misses)}件)", "value": miss_text, "inline": False},
-            {"name": "💹 収支", "value": f"**{'+'if total_profit>=0 else ''}¥{total_profit:,}**", "inline": False},
-        ],
+        "fields": fields,
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "footer": {"text": "※ 投資は自己責任でお願いします"},
     }
     payload = {
         "username": "競輪予想Bot",
+        "avatar_url": "https://cdn-icons-png.flaticon.com/512/3176/3176369.png",
         "embeds": [embed],
     }
-    # 無料チャンネル（実績公開）に投稿
+    return _post_webhook(WEBHOOK_PAID, payload)
+
+
+def send_daily_summary(summary: dict) -> bool:
+    """
+    日次収支サマリーを送信する（DISCORD_WEBHOOK_FREE があれば無料側に投稿）。
+
+    summary: bet_logger.get_daily_summary() の返り値
+    """
+    profit  = summary['profit']
+    color   = COLOR_HIT if profit >= 0 else COLOR_MISS
+    sign    = '+' if profit >= 0 else ''
+
+    hit_lines  = [f"✅ {h['venue']} {h['race_no']}R  `{h['result_combo']}`  +¥{h['profit']:,}"
+                  for h in summary['hits']] or ["なし"]
+    miss_lines = [f"❌ {m['venue']} {m['race_no']}R  `{m['result_combo']}`"
+                  for m in summary['misses']] or ["なし"]
+
+    embed = {
+        "title": f"📊 {summary['date']} 予想結果サマリー",
+        "color": color,
+        "description": (
+            f"投資 ¥{summary['total_bet']:,}  |  "
+            f"払戻 ¥{summary['payout']:,}  |  "
+            f"収支 **{sign}¥{profit:,}**  |  "
+            f"ROI **{summary['roi']}%**"
+        ),
+        "fields": [
+            {"name": f"🎯 的中 ({len(summary['hits'])}件)", "value": "\n".join(hit_lines),  "inline": False},
+            {"name": f"💀 ハズレ ({len(summary['misses'])}件)", "value": "\n".join(miss_lines), "inline": False},
+        ],
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "footer": {"text": "※ 投資は自己責任でお願いします"},
+    }
+    payload = {"username": "競輪予想Bot", "embeds": [embed]}
     return _post_webhook(WEBHOOK_FREE or WEBHOOK_PAID, payload)
+
 
 
 def test_send():

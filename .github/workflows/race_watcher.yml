@@ -6,6 +6,9 @@ on:
     - cron: '0,20,40 0-12 * * *'
   workflow_dispatch:    # 手動実行ボタン（テスト用）
 
+permissions:
+  contents: write       # bets_log.csv の push に必要
+
 jobs:
   predict:
     runs-on: ubuntu-latest
@@ -15,6 +18,8 @@ jobs:
       # ① リポジトリをチェックアウト（data/ フォルダ含む）
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # ② Python セットアップ
       - name: Setup Python
@@ -35,3 +40,12 @@ jobs:
           DB_SLIM_PATH: data/S級DB_slim.xlsx
           DB_OLD_PATH:  data/S級選手究極DB(1).xlsx
         run: python check_and_notify.py
+
+      # ⑤ bets_log.csv を commit & push（変更があれば）
+      - name: Save bets log
+        run: |
+          git config user.email "bot@noreply.github.com"
+          git config user.name "競輪予想Bot"
+          git add data/bets_log.csv || true
+          git diff --staged --quiet || git commit -m "auto: bets_log更新 $(date +'%Y-%m-%d %H:%M')"
+          git push || true

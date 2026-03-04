@@ -24,7 +24,9 @@ from bs4 import BeautifulSoup
 
 from kdreams_scraper import KdreamsScraper
 from fetch_schedule import fetch_today_f1_g3_races
-from send_discord import send_prediction, send_skip
+from fetch_results import get_race_result
+from bet_logger   import log_bet, update_result, get_pending_races, get_daily_summary
+from send_discord import send_prediction, send_skip, send_race_result, send_daily_summary
 
 # ── 設定 ─────────────────────────────────────────────────────────────────────────────────
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "")
@@ -304,6 +306,33 @@ def main():
 
     print(f"🕐 {now.strftime('%H:%M')} — 締切ウィンドウ: {dl_lo.strftime('%H:%M')}〜{dl_hi.strftime('%H:%M')}")
 
+    # ── フェーズ0: 発走済みレースの結果確認 ──────────────────────────────────
+    pending = get_pending_races()
+    if pending:
+        print(f"\n🔎 結果確認: {len(pending)}件")
+        scraper0 = KdreamsScraper()
+        for pr in pending:
+            res = get_race_result(scraper0, f"https://keirin.kdreams.jp/{pr.get('venue_slug', pr['venue'])}/racedetail/{pr['race_id']}/")
+            if res:
+                updated = update_result(pr['race_id'], res['combo'], res['payout'])
+                if updated:
+                    summary = get_daily_summary()
+                    total_today = summary['profit']
+                    # 的中/外れをDiscordに通知
+                    row = next((r for r in summary['hits'] + summary['misses']
+                                if r['race_id'] == pr['race_id']), None)
+                    if row:
+                        hit     = row['status'] == 'hit'
+                        profit  = int(row['profit'])
+                        payout  = int(row['payout'])
+                        send_race_result(
+                            venue=pr['venue'], race_no=int(pr['race_no']),
+                            race_name=pr.get('race_name', 'S級'),
+                            result_combo=res['combo'], payout=payout,
+                            hit=hit, profit=profit, total_today=total_today,
+                        )
+            time.sleep(0.5)
+
     # Phase1: 当日レース一覧取得
     print("\n📡 当日開催を取得中...")
     races = fetch_today_f1_g3_races(today, min_grade="F1", fetch_times=True)
@@ -375,6 +404,15 @@ def main():
                 mins_left=mins_left,
                 lines=lines_for_discord,
                 result=result,
+            )
+            # 買い目を記録（結果確認のため）
+            log_bet(
+                race_id=r['race_id'],
+                venue=venue, race_no=race_no,
+                race_name=r.get('race_name', 'S級'),
+                start_time=r.get('start_time'),
+                bets=result['bets'],
+                total=result['total'],
             )
         else:
             print(f"⏭️  フィルター除外（スキップ）")
