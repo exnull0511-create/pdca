@@ -1,0 +1,51 @@
+name: 競輪予想 収支レポート
+
+on:
+  schedule:
+    # 週次: 毎週月曜 09:00 JST = 日曜 00:00 UTC
+    - cron: '0 0 * * 1'
+    # 月次: 毎月1日 09:00 JST = 00:00 UTC
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'weekly or monthly'
+        required: true
+        default: 'weekly'
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements_cloud.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements_cloud.txt
+
+      # 週次・月次を自動判定（手動実行時はinput優先）
+      - name: 週次レポート
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'weekly' || github.event.schedule == '0 0 * * 1'
+        env:
+          DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_STATS: ${{ secrets.DISCORD_WEBHOOK_STATS }}
+        run: python stats_summary.py weekly
+
+      - name: 月次レポート
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'monthly' || github.event.schedule == '0 0 1 * *'
+        env:
+          DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_STATS: ${{ secrets.DISCORD_WEBHOOK_STATS }}
+        run: python stats_summary.py monthly

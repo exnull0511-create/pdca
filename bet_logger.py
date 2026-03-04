@@ -157,6 +157,64 @@ def _save_all(rows: list[dict]):
         w.writerows(rows)
 
 
+def get_period_summary(date_from: str, date_to: str, label: str) -> dict:
+    """
+    任意期間の収支サマリーを返す。
+
+    Args:
+        date_from: 'YYYY-MM-DD'  開始日（含む）
+        date_to:   'YYYY-MM-DD'  終了日（含む）
+        label:     '週次' or '月次' など表示用
+
+    Returns:
+        {label, date_from, date_to, n_days, n_races, n_hits, n_misses,
+         total_bet, payout, profit, roi, hit_rate, best_hit, daily}
+    """
+    _ensure_file()
+    rows = [r for r in _load_all()
+            if date_from <= r["date"] <= date_to
+            and r["status"] in ("hit", "miss")]
+
+    hits   = [r for r in rows if r["status"] == "hit"]
+    misses = [r for r in rows if r["status"] == "miss"]
+
+    total_bet    = sum(int(r["total_bet"]) for r in rows)
+    total_payout = sum(int(r["payout"])    for r in rows)
+    profit       = total_payout - total_bet
+    roi          = round(total_payout / total_bet * 100, 1) if total_bet else 0.0
+    hit_rate     = round(len(hits) / len(rows) * 100, 1) if rows else 0.0
+
+    # 最大払戻レース
+    best_hit = max(hits, key=lambda r: int(r["payout"]), default=None)
+
+    # 日別サマリー
+    dates = sorted(set(r["date"] for r in rows))
+    daily = []
+    for d in dates:
+        d_rows = [r for r in rows if r["date"] == d]
+        d_profit = sum(int(r["profit"]) for r in d_rows)
+        d_hits   = sum(1 for r in d_rows if r["status"] == "hit")
+        daily.append({"date": d, "profit": d_profit, "hits": d_hits,
+                      "n": len(d_rows)})
+
+    return {
+        "label":      label,
+        "date_from":  date_from,
+        "date_to":    date_to,
+        "n_days":     len(dates),
+        "n_races":    len(rows),
+        "n_hits":     len(hits),
+        "n_misses":   len(misses),
+        "total_bet":  total_bet,
+        "payout":     total_payout,
+        "profit":     profit,
+        "roi":        roi,
+        "hit_rate":   hit_rate,
+        "best_hit":   best_hit,
+        "daily":      daily,
+    }
+
+
 if __name__ == "__main__":
     # 動作確認
     _ensure_file()

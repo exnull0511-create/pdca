@@ -217,6 +217,74 @@ def send_daily_summary(summary: dict) -> bool:
 
 
 
+def send_period_summary(summary: dict) -> bool:
+    """
+    週次・月次の収支サマリーを stats チャンネルに送信する。
+    環境変数 DISCORD_WEBHOOK_STATS があればそちらに、なければ WEBHOOK_PAID に送る。
+
+    summary: bet_logger.get_period_summary() の返り値
+    """
+    profit  = summary['profit']
+    color   = COLOR_HIT if profit >= 0 else COLOR_MISS
+    sign    = '+' if profit >= 0 else ''
+
+    # 日別推移テキスト（最大10日分）
+    daily_lines = []
+    for d in summary['daily'][-10:]:
+        p = d['profit']
+        ps = f"{'+'if p>=0 else ''}¥{p:,}"
+        bar = "🟢" if p >= 0 else "🔴"
+        daily_lines.append(f"{bar} {d['date']}  {ps}  ({d['hits']}/{d['n']}的中)")
+
+    # 最高払戻
+    best = summary.get('best_hit')
+    best_text = (
+        f"> {best['venue']} {best['race_no']}R  `{best['result_combo']}`  **¥{int(best['payout']):,}**"
+        if best else "> なし"
+    )
+
+    embed = {
+        "title": f"📈 {summary['label']}  収支レポート",
+        "color": color,
+        "description": (
+            f"期間: `{summary['date_from']}` 〜 `{summary['date_to']}` "
+            f"（{summary['n_days']}日間）"
+        ),
+        "fields": [
+            {
+                "name": "💹 サマリー",
+                "value": (
+                    f"> 予想レース数: **{summary['n_races']}R**\n"
+                    f"> 的中: **{summary['n_hits']}件**  外れ: {summary['n_misses']}件\n"
+                    f"> 的中率: **{summary['hit_rate']}%**\n"
+                    f"> 投資合計: ¥{summary['total_bet']:,}\n"
+                    f"> 払戻合計: ¥{summary['payout']:,}\n"
+                    f"> 収　　支: **{sign}¥{profit:,}**\n"
+                    f"> ROI: **{summary['roi']}%**"
+                ),
+                "inline": False,
+            },
+            {
+                "name": "🏆 最高払戻",
+                "value": best_text,
+                "inline": False,
+            },
+            {
+                "name": "📅 日別推移",
+                "value": "\n".join(daily_lines) if daily_lines else "データなし",
+                "inline": False,
+            },
+        ],
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "footer": {"text": "※ 投資は自己責任でお願いします"},
+    }
+    payload = {"username": "競輪予想Bot", "embeds": [embed]}
+
+    # DISCORD_WEBHOOK_STATS があればそちら、なければ WEBHOOK_PAID
+    stats_url = os.environ.get("DISCORD_WEBHOOK_STATS", "") or WEBHOOK_PAID
+    return _post_webhook(stats_url, payload)
+
+
 def test_send():
     """動作確認用テスト送信"""
     dummy_lines  = [
