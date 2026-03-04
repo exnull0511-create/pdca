@@ -2,6 +2,8 @@ name: 競輪予想 収支レポート
 
 on:
   schedule:
+    # 日次: 毎日 21:00 JST = 12:00 UTC（レース終了後）
+    - cron: '0 12 * * *'
     # 週次: 毎週月曜 09:00 JST = 日曜 00:00 UTC
     - cron: '0 0 * * 1'
     # 月次: 毎月1日 09:00 JST = 00:00 UTC
@@ -9,9 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'weekly or monthly'
+        description: 'daily / weekly / monthly'
         required: true
-        default: 'weekly'
+        default: 'daily'
 
 permissions:
   contents: read
@@ -35,16 +37,25 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements_cloud.txt
 
-      # 週次・月次を自動判定（手動実行時はinput優先）
+      # 日次レポート（毎日21時 or 手動）
+      - name: 日次レポート
+        if: github.event.schedule == '0 12 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'daily')
+        env:
+          DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_STATS: ${{ secrets.DISCORD_WEBHOOK_STATS }}
+        run: python stats_summary.py daily
+
+      # 週次レポート（毎週月曜 or 手動）
       - name: 週次レポート
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'weekly' || github.event.schedule == '0 0 * * 1'
+        if: github.event.schedule == '0 0 * * 1' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'weekly')
         env:
           DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_WEBHOOK_STATS: ${{ secrets.DISCORD_WEBHOOK_STATS }}
         run: python stats_summary.py weekly
 
+      # 月次レポート（毎月1日 or 手動）
       - name: 月次レポート
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'monthly' || github.event.schedule == '0 0 1 * *'
+        if: github.event.schedule == '0 0 1 * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'monthly')
         env:
           DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_WEBHOOK_STATS: ${{ secrets.DISCORD_WEBHOOK_STATS }}

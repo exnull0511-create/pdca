@@ -25,11 +25,16 @@ def main():
         date_from = today.replace(day=1).isoformat()
         date_to   = today.isoformat()
         label = f"{today.year}年{today.month}月"
-    else:
-        # 直近7日（月曜〜日曜 or 直近7日）
+    elif mode == "weekly":
+        # 直近7日
         date_from = (today - timedelta(days=6)).isoformat()
         date_to   = today.isoformat()
-        label = f"{date_from} 〜 {date_to}"
+        label = f"{date_from} 〜 {date_to} 週次"
+    else:
+        # daily: 当日のみ
+        date_from = today.isoformat()
+        date_to   = today.isoformat()
+        label = f"{today.isoformat()} 日次"
 
     print(f"📊 {mode}サマリー: {date_from} 〜 {date_to}")
     summary = get_period_summary(date_from, date_to, label)
