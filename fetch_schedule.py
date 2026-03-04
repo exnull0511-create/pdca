@@ -25,7 +25,6 @@ import requests
 from bs4 import BeautifulSoup
 
 # ── keirinbusines の既存スクレイパーを利用 ────────────────────────────────
-sys.path.insert(0, r'C:\keirinbusines')
 from kdreams_scraper import KdreamsScraper
 
 BASE = "https://keirin.kdreams.jp"

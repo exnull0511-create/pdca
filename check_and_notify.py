@@ -22,7 +22,6 @@ from datetime import datetime, date, timedelta
 from pathlib import Path
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, r'C:\keirinbusines')
 from kdreams_scraper import KdreamsScraper
 from fetch_schedule import fetch_today_f1_g3_races
 from send_discord import send_prediction, send_skip
