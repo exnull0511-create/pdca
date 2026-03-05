@@ -1,10 +1,7 @@
 name: 競輪予想 自動通知
 
 on:
-  schedule:
-    # 1分おきに実行 / JST 9:00〜21:00 = UTC 0:00〜12:00（締切連動・即時判定）
-    - cron: '*/1 0-12 * * *'
-  workflow_dispatch:    # 手動実行ボタン（テスト用）
+  workflow_dispatch:    # cron-job.org から毎分トリガー / 手動実行ボタンも使用可
 
 permissions:
   contents: write       # bets_log.csv の push に必要
