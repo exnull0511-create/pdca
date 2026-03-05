@@ -35,11 +35,12 @@ DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "")
 DB_SLIM_PATH    = os.environ.get("DB_SLIM_PATH", "data/S級デビーslim.xlsx")
 DB_OLD_PATH     = os.environ.get("DB_OLD_PATH",  r"data/S級選手究極DB(1).xlsx")
 
-# 2段階設定
-PHASE1_LO = 8   # Phase1: 締切N分前（候補判定）最大値
-PHASE1_HI = 13  # Phase1: 締切N分前最小値
-PHASE2_LO = 2   # Phase2: 締切N分前（最終確認）最大値
-PHASE2_HI = 7   # Phase2: 締切N分前最小値
+# 締切連動スケジューリング設定
+# 1分おきcron前提: Phase1は締切7〜9分前の2分ウィンドウで確実に1〜2回起動
+PHASE1_LO = 7   # Phase1: 締切N分前（候補判定）最大値
+PHASE1_HI = 9   # Phase1: 締切N分前最小値
+PHASE2_LO = 3   # Phase2: 締切N分前（最終確認・通知）最大値
+PHASE2_HI = 5   # Phase2: 締切N分前最小値  ← 通知後5分の余裕でユーザーが購入可能
 BET_BASE  = 100
 
 STRATEGY_CFG = dict(
