@@ -353,7 +353,7 @@ def main():
     phase2_ids = {c['race_id'] for c in candidates}
 
     p2_lo = now + timedelta(minutes=PHASE2_LO)
-    p2_hi = now + timedelta(minutes=PH2_HI)
+    p2_hi = now + timedelta(minutes=PHASE2_HI)
 
     phase2_target = [r for r in races
                      if r.get('deadline_time') and p2_lo <= r['deadline_time'] <= p2_hi
