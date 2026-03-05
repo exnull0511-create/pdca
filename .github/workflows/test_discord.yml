@@ -1,0 +1,57 @@
+name: Discord 接続テスト
+
+on:
+  workflow_dispatch:   # 手動実行のみ
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements_cloud.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements_cloud.txt
+
+      - name: Discord テスト送信
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python -c "
+import os, requests
+from datetime import datetime
+
+webhook = os.environ.get('DISCORD_WEBHOOK_URL', '')
+if not webhook:
+    print('ERROR: DISCORD_WEBHOOK_URL が未設定')
+    exit(1)
+
+payload = {
+    'username': '競輪予想Bot',
+    'embeds': [{
+        'title': '🔧 接続テスト',
+        'color': 0x00b4d8,
+        'description': (
+            '予想チャンネルへの投稿テストです。\n'
+            'このメッセージが届いていれば Webhook は正常に動作しています。\n\n'
+            f'実行時刻: {datetime.now().strftime(\"%Y-%m-%d %H:%M\")} UTC'
+        ),
+        'footer': {'text': 'GitHub Actions workflow_dispatch からの手動テスト'}
+    }]
+}
+r = requests.post(webhook, json=payload, timeout=10)
+if r.status_code in (200, 204):
+    print('✅ 送信成功！')
+else:
+    print(f'❌ 送信失敗 status={r.status_code}: {r.text}')
+    exit(1)
+"
