@@ -227,7 +227,7 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
                 v = pd.to_numeric(series, errors='coerce')
                 w = np.where(hist['開催日'].isin(rd), RECENT_W, 1.0)
                 mk = v.notna()
-                return float((v[mk]*w[mk]).sum()/w[mk].sum()) if mk.any() else np.nan
+                return float((v[mk]*w[mk]).sum()/w[mk].sum()) if mk.any() else None
             ip   = wm(hist['IP'])   or 4.0
             ep   = wm(hist['EP'])   or 4.0
             dp   = wm(hist['DP'])   or 3.0
@@ -265,7 +265,7 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
     is_chaos = len(strong_leaders) >= 2
 
     top_ev = ranked[0][1]['ev']
-    if top_ev < STRATEGY_CFG['min_top_ev']: return None
+    if pd.isna(top_ev) or top_ev < STRATEGY_CFG['min_top_ev']: return None
     if is_chaos and STRATEGY_CFG['skip_chaos']: return None
 
     all_nums = [n for n,_ in ranked]
