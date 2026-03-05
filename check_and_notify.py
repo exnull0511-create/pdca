@@ -36,9 +36,12 @@ DB_SLIM_PATH    = os.environ.get("DB_SLIM_PATH", "data/S級デビーslim.xlsx")
 DB_OLD_PATH     = os.environ.get("DB_OLD_PATH",  r"data/S級選手究極DB(1).xlsx")
 
 # 締切連動スケジューリング設定
-# 1分おきcron前提: Phase1は締切7〜9分前の2分ウィンドウで確実に1〜2回起動
+# 1分おきcron前提:
+#   Phase1: 7〜12分前の5分ウィンドウ（連続5回スキップしない限り取りこぼしない）
+#   Phase2: 3〜5分前の3分ウィンドウ（通知後ユーザーに3-5分の購入時間）
+# log_betの重複防止機能によりPhase1が複数回ヒットしても候補登録は1回のみ
 PHASE1_LO = 7   # Phase1: 締切N分前（候補判定）最大値
-PHASE1_HI = 9   # Phase1: 締切N分前最小値
+PHASE1_HI = 12  # Phase1: 締切N分前最小値＊5分ウィンドウ
 PHASE2_LO = 3   # Phase2: 締切N分前（最終確認・通知）最大値
 PHASE2_HI = 5   # Phase2: 締切N分前最小値  ← 通知後5分の余裕でユーザーが購入可能
 BET_BASE  = 100
