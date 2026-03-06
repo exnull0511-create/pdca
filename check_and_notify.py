@@ -325,7 +325,7 @@ def main():
         print(f"\n🔎 結果確認: {len(pending)}件")
         scraper0 = KdreamsScraper()
         for pr in pending:
-            res = get_race_result(scraper0, f"https://keirin.kdreams.jp/{pr.get('venue_slug', pr['venue'])}/racedetail/{pr['race_id']}/")
+            res = get_race_result(scraper0, f"https://keirin.kdreams.jp/{pr.get('venue_slug') or pr['venue']}/racedetail/{pr['race_id']}/")
             if res:
                 updated = update_result(pr['race_id'], res['combo'], res['payout'])
                 if updated:
@@ -379,15 +379,14 @@ def main():
     scraper = KdreamsScraper()
 
     # 既に記録済みのrace_idを取得（重複通知防止）
-    from bet_logger import _load_log
-    existing_log = _load_log()
+    from bet_logger import _load_all
+    existing_rows = _load_all()  # list[dict]
     today_str = today.strftime('%Y-%m-%d')
-    already_logged = set()
-    if not existing_log.empty and 'date' in existing_log.columns:
-        today_rows = existing_log[existing_log['date'].astype(str).str.startswith(today_str)]
-        # pending/hit/miss/candidate (通知済みのもの)
-        notified = today_rows[today_rows['status'].isin(['pending', 'hit', 'miss', 'candidate'])]
-        already_logged = set(notified['race_id'].astype(str).tolist())
+    already_logged = {
+        r['race_id'] for r in existing_rows
+        if r.get('date', '') == today_str
+        and r.get('status', '') in ('pending', 'hit', 'miss', 'candidate')
+    }
 
     for r in notify_target:
         venue    = r['venue']
@@ -397,6 +396,11 @@ def main():
         start    = r.get('start_time')
         mins_left = int((deadline - now).total_seconds() / 60)
         race_id  = r['race_id']
+        # race_url から venue_slug を抽出 (例: .../matsuyama/racecard/...)
+        try:
+            venue_slug = race_url.split('keirin.kdreams.jp/')[1].split('/')[0]
+        except Exception:
+            venue_slug = ''
 
         if str(race_id) in already_logged:
             print(f"  ⏩ {venue} {race_no}R 通知済みスキップ")
@@ -429,6 +433,7 @@ def main():
                 bets=result['bets'],
                 total=result['total'],
                 status='pending',
+                venue_slug=r.get('venue_slug', ''),
             )
             lines_for_discord = [
                 {'line': lno, 'bibs': [b for b, ln in num_to_line.items() if ln == lno]}

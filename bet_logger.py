@@ -16,7 +16,7 @@ from pathlib import Path
 BETS_LOG = Path(os.environ.get("BETS_LOG_PATH", "data/bets_log.csv"))
 
 COLUMNS = [
-    "date", "race_id", "venue", "race_no", "race_name",
+    "date", "race_id", "venue", "venue_slug", "race_no", "race_name",
     "start_time", "bets_json", "total_bet",
     "result_combo", "payout", "profit", "status",
 ]
@@ -31,7 +31,8 @@ def _ensure_file():
 
 def log_bet(race_id: str, venue: str, race_no: int, race_name: str,
             start_time: datetime, bets: list[tuple[str, int]], total: int,
-            status: str = "pending", deadline_str: str = ""):
+            status: str = "pending", deadline_str: str = "",
+            venue_slug: str = ""):
     """
     買い予測を記録する。同一 race_id が既にある場合は上書きしない。
     status: "candidate"(Phase1候補) / "pending"(Phase2確定済み)
@@ -48,6 +49,7 @@ def log_bet(race_id: str, venue: str, race_no: int, race_name: str,
         "date":         date.today().isoformat(),
         "race_id":      race_id,
         "venue":        venue,
+        "venue_slug":   venue_slug,
         "race_no":      race_no,
         "race_name":    race_name,
         "start_time":   start_time.strftime("%H:%M") if start_time else "?",
