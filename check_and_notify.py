@@ -352,6 +352,15 @@ def main():
         print("開催なし or 取得失敗")
         return
 
+    # ── 残レースチェック: S級レース終了後は収支サマリーを送って終了 ─────────
+    remaining = [r for r in races if r.get('deadline_time') and r['deadline_time'] > now]
+    if not remaining:
+        print("✅ 本日のS級レースは全て終了。収支サマリーを送信して終了します。")
+        summary = get_daily_summary()
+        if summary and (summary.get('bets', 0) > 0):
+            send_daily_summary(summary)
+        return
+
     # ── Phase2処理: 締切2〜7分前レース → 候補確認 → 最終通知 ─────────────
     candidates = get_candidates()   # bet_logのstatus=candidateの本日分
     phase2_ids = {c['race_id'] for c in candidates}

@@ -69,12 +69,10 @@ def send_prediction(
     if not line_text:
         line_text = "> (ライン情報なし)\n"
 
-    # 買い目（最大7点表示）
+    # 買い目（全点表示）
     bets_text = ""
-    for i, (combo, amt) in enumerate(result['bets'][:7], 1):
+    for i, (combo, amt) in enumerate(result['bets'], 1):
         bets_text += f"> `{combo}`  ¥{amt:,}\n"
-    if len(result['bets']) > 7:
-        bets_text += f"> ...他{len(result['bets'])-7}点\n"
 
     embed = {
         "title": f"🎯  {venue}  {race_no}R  {race_name}",
