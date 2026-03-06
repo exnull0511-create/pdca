@@ -361,145 +361,91 @@ def main():
             send_daily_summary(summary)
         return
 
-    # ── Phase2処理: 締切2〜7分前レース → 候補確認 → 最終通知 ─────────────
-    candidates = get_candidates()   # bet_logのstatus=candidateの本日分
-    phase2_ids = {c['race_id'] for c in candidates}
+    # ── 1段階通知: 締切7〜15分前のレースを直接判定→通知 ─────────────────
+    # bets_logで重複チェックするのでcronが何度叩いても安全
+    NOTIFY_LO = 7    # 締切N分前・最大値（ここを超えたらもう対象外）
+    NOTIFY_HI = 15   # 締切N分前・最小値（= 8分ウィンドウ）
+    p_lo = now + timedelta(minutes=NOTIFY_LO)
+    p_hi = now + timedelta(minutes=NOTIFY_HI)
 
-    p2_lo = now + timedelta(minutes=PHASE2_LO)
-    p2_hi = now + timedelta(minutes=PHASE2_HI)
+    notify_target = [r for r in races
+                     if r.get('deadline_time') and p_lo <= r['deadline_time'] <= p_hi]
 
-    phase2_target = [r for r in races
-                     if r.get('deadline_time') and p2_lo <= r['deadline_time'] <= p2_hi
-                     and r['race_id'] in phase2_ids]
-
-    if phase2_target:
-        print(f"\n🎯 Phase2: {len(phase2_target)}R 最終確認")
-        db_all, db_slim, nobi_col = load_db()
-        scraper = KdreamsScraper()
-
-        for r in phase2_target:
-            venue   = r['venue']
-            race_no = r['race_no']
-            deadline = r['deadline_time']
-            mins_left = int((deadline - now).total_seconds() / 60) if deadline else -1
-            print(f"  🔄 Phase2 {venue} {race_no}R  あと{mins_left}分")
-
-            # 最終オッズ再取得
-            race_card, num_to_line, num_to_bibs = get_race_info(scraper, r['race_url'])
-            time.sleep(0.5)
-            odds_dict = get_odds(scraper, r['race_url'])
-            time.sleep(0.5)
-
-            if race_card.empty or not odds_dict:
-                print(f"  ⚠️  データ取得失敗 → キャンセル")
-                cancel_candidate(r['race_id'])
-                send_cancel(venue, race_no, r.get('race_name','S級'),
-                            r['start_time_str'], r['deadline_str'],
-                            "データ取得失敗")
-                continue
-
-            result = run_prediction(
-                venue, race_no, race_card, num_to_line, num_to_bibs,
-                odds_dict, db_all, db_slim, nobi_col, today_dt
-            )
-
-            if result:
-                # Phase2通過 → 買い目確定、別分も最終オッズで更新済み
-                confirm_candidate(r['race_id'], result['bets'], result['total'])
-                lines_for_discord = [
-                    {'line': lno, 'bibs': [b for b, ln in num_to_line.items() if ln == lno]}
-                    for lno in sorted(set(num_to_line.values()))
-                ]
-                send_prediction(
-                    venue=venue, race_no=race_no,
-                    race_name=r.get('race_name', 'S級'),
-                    start_str=r['start_time_str'],
-                    deadline_str=r['deadline_str'],
-                    mins_left=mins_left,
-                    lines=lines_for_discord,
-                    result=result,
-                )
-                print(f"  ✅ Phase2通過・通知送信: {venue} {race_no}R")
-            else:
-                # Phase2落第 → キャンセル
-                cancel_candidate(r['race_id'])
-                send_cancel(venue, race_no, r.get('race_name', 'S級'),
-                            r['start_time_str'], r['deadline_str'],
-                            "EV/カオスフィルター")
-                print(f"  ⏭️  Phase2落第キャンセル: {venue} {race_no}R")
-
-    # ── Phase1処理: 締切8〜13分前レース → go/no-go判定 ───────────────
-    p1_lo = now + timedelta(minutes=PHASE1_LO)
-    p1_hi = now + timedelta(minutes=PHASE1_HI)
-
-    phase1_target = [r for r in races
-                     if r.get('deadline_time') and p1_lo <= r['deadline_time'] <= p1_hi
-                     and r['race_id'] not in phase2_ids]
-
-    print(f"\n🔍 Phase1: {len(phase1_target)}R 候補判定")
-    if not phase1_target:
+    print(f"\n🔔 通知対象: {len(notify_target)}R (締切{NOTIFY_LO}〜{NOTIFY_HI}分前)")
+    if not notify_target:
         return
 
-    if 'db_all' not in locals():  # Phase2で既にロード済みなら再利用
-        db_all, db_slim, nobi_col = load_db()
-        scraper = KdreamsScraper()
+    db_all, db_slim, nobi_col = load_db()
+    scraper = KdreamsScraper()
 
-    for r in phase1_target:
+    # 既に記録済みのrace_idを取得（重複通知防止）
+    from bet_logger import _load_log
+    existing_log = _load_log()
+    today_str = today.strftime('%Y-%m-%d')
+    already_logged = set()
+    if not existing_log.empty and 'date' in existing_log.columns:
+        today_rows = existing_log[existing_log['date'].astype(str).str.startswith(today_str)]
+        # pending/hit/miss/candidate (通知済みのもの)
+        notified = today_rows[today_rows['status'].isin(['pending', 'hit', 'miss', 'candidate'])]
+        already_logged = set(notified['race_id'].astype(str).tolist())
+
+    for r in notify_target:
         venue    = r['venue']
         race_no  = r['race_no']
         race_url = r['race_url']
         deadline = r['deadline_time']
         start    = r.get('start_time')
-        mins_left = int((deadline - now).total_seconds() / 60) if deadline else -1
-        print(f"  🔍 Phase1 {venue} {race_no}R  締切{r['deadline_str']}(あと{mins_left}分)")
+        mins_left = int((deadline - now).total_seconds() / 60)
+        race_id  = r['race_id']
 
-        # Phase1は出走表と概略オッズのみ取得（go/no-goに必要な最低限のデータ）
+        if str(race_id) in already_logged:
+            print(f"  ⏩ {venue} {race_no}R 通知済みスキップ")
+            continue
+
+        print(f"  🔎 {venue} {race_no}R  締切{r['deadline_str']}(あと{mins_left}分)")
+
         race_card, num_to_line, num_to_bibs = get_race_info(scraper, race_url)
         time.sleep(0.5)
-        odds_dict_p1 = get_odds(scraper, race_url)  # Phase1時点のオッズ（小変動あり）
+        odds_dict = get_odds(scraper, race_url)
         time.sleep(0.5)
 
         if race_card.empty:
-            print(f"  ⏭️  出走表取得失敗")
+            print(f"  ⚠️  出走表取得失敗")
             continue
-        if not odds_dict_p1:
-            print(f"  ⏭️  オッズ取得失敗")
+        if not odds_dict:
+            print(f"  ⚠️  オッズ取得失敗")
             continue
 
-        # go/no-go判定（EVScoreフィルタ — オッズ不要の項目のみ）
-        result_p1 = run_prediction(
+        result = run_prediction(
             venue, race_no, race_card, num_to_line, num_to_bibs,
-            odds_dict_p1, db_all, db_slim, nobi_col, today_dt
-        )
-        if not result_p1:
-            print(f"  ⏭️  Phase1スキップ（EVScore/カオスフィルタ）")
-            continue
-
-        # candidateとして保存（買い目はまだPhase2で更新する）
-        log_bet(
-            race_id=r['race_id'], venue=venue, race_no=race_no,
-            race_name=r.get('race_name', 'S級'),
-            start_time=start,
-            bets=result_p1['bets'],
-            total=result_p1['total'],
-            status="candidate",
+            odds_dict, db_all, db_slim, nobi_col, today_dt
         )
 
-        # Phase1候補通知
-        lines_for_discord = [
-            {'line': lno, 'bibs': [b for b, ln in num_to_line.items() if ln == lno]}
-            for lno in sorted(set(num_to_line.values()))
-        ]
-        send_candidate(
-            venue=venue, race_no=race_no,
-            race_name=r.get('race_name', 'S級'),
-            start_str=r['start_time_str'],
-            deadline_str=r['deadline_str'],
-            mins_left=mins_left,
-            lines=lines_for_discord,
-            result=result_p1,
-        )
-        print(f"  🔍 候補登録・通知: {venue} {race_no}R")
+        if result:
+            log_bet(
+                race_id=race_id, venue=venue, race_no=race_no,
+                race_name=r.get('race_name', 'S級'),
+                start_time=start,
+                bets=result['bets'],
+                total=result['total'],
+                status='pending',
+            )
+            lines_for_discord = [
+                {'line': lno, 'bibs': [b for b, ln in num_to_line.items() if ln == lno]}
+                for lno in sorted(set(num_to_line.values()))
+            ]
+            send_prediction(
+                venue=venue, race_no=race_no,
+                race_name=r.get('race_name', 'S級'),
+                start_str=r['start_time_str'],
+                deadline_str=r['deadline_str'],
+                mins_left=mins_left,
+                lines=lines_for_discord,
+                result=result,
+            )
+            print(f"  ✅ 通知送信: {venue} {race_no}R  軸:{result['axis']}")
+        else:
+            print(f"  ⏭️  スキップ（EVScore/カオスフィルタ）")
 
 
 if __name__ == "__main__":
