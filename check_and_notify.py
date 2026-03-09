@@ -370,7 +370,12 @@ def main():
             send_daily_summary(summary)
         return
 
-    # ── 1段階通知: 締切7〜15分前のレースを直接判定→通知 ─────────────────
+    # ── 時間外ガード: JST 21:05 以降は予想通知を行わない ─────────────────────
+    # cron-job.org の workflow_dispatch が時間外に届いても誤通知しないよう保護
+    if now.hour > 21 or (now.hour == 21 and now.minute >= 5):
+        print(f"🕐 {now.strftime('%H:%M')} — 21:05以降のため予想通知をスキップ（結果確認のみ実施済み）")
+        return
+
     # bets_logで重複チェックするのでcronが何度叩いても安全
     NOTIFY_LO = 7    # 締切N分前・最大値（ここを超えたらもう対象外）
     NOTIFY_HI = 15   # 締切N分前・最小値（= 8分ウィンドウ）
