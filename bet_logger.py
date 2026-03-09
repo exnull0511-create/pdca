@@ -115,8 +115,8 @@ def get_pending_races() -> list[dict]:
         try:
             h, m = map(int, st.split(":"))
             start_dt = datetime.combine(date.today(), datetime.min.time()).replace(hour=h, minute=m)
-            # 発走から3分以上経過していれば結果確認対象
-            if (now - start_dt).total_seconds() >= 180:
+            # 発走から10分以上経過していれば結果確認対象（審議・写真判定考慮）
+            if (now - start_dt).total_seconds() >= 600:
                 result.append(r)
         except Exception:
             pass
