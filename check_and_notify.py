@@ -47,7 +47,7 @@ PHASE2_HI = 5   # Phase2: 締切N分前最小値  ← 通知後5分の余裕で�
 BET_BASE  = 100
 
 STRATEGY_CFG = dict(
-    skip_chaos=True, min_top_ev=70,
+    skip_chaos=False, min_top_ev=60,
     skip_low_bank=True, top_n_prob_bets=14,
 )
 
