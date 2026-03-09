@@ -12,8 +12,8 @@ _inspect_*.py
 _test_*.py
 _debug_*.py
 
-# ローカルのみの大きいDB
-data/S級選手究極DB*.xlsx
+# ローカルのみの大きいDB（コメントアウト：GitHubに含める）
+# data/S級選手究極DB*.xlsx
 
 # 機密情報（Webhook URL など）
 .env
