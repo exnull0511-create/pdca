@@ -332,7 +332,7 @@ def main():
                     summary = get_daily_summary()
                     total_today = summary['profit']
                     row = next((r for r in summary['hits'] + summary['misses']
-                                if r['race_id'] == pr['race_id']), None)
+                                if str(r['race_id']) == str(pr['race_id'])), None)
                     if row:
                         hit     = row['status'] == 'hit'
                         profit  = int(row['profit'])
@@ -357,7 +357,7 @@ def main():
     if not remaining:
         print("✅ 本日のS級レースは全て終了。収支サマリーを送信して終了します。")
         summary = get_daily_summary()
-        if summary and (summary.get('bets', 0) > 0):
+        if summary and (summary.get('n_races', 0) > 0):
             send_daily_summary(summary)
         return
 
@@ -385,7 +385,7 @@ def main():
     already_logged = {
         r['race_id'] for r in existing_rows
         if r.get('date', '') == today_str
-        and r.get('status', '') in ('pending', 'hit', 'miss', 'candidate')
+        and r.get('status', '') in ('pending', 'hit', 'miss')
     }
 
     for r in notify_target:
