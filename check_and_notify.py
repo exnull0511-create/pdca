@@ -47,7 +47,7 @@ PHASE2_HI = 5   # Phase2: 締切N分前最小値  ← 通知後5分の余裕で�
 BET_BASE  = 100
 
 STRATEGY_CFG = dict(
-    skip_chaos=False, min_top_ev=60,
+    skip_chaos=True, min_top_ev=60,
     skip_low_bank=True, top_n_prob_bets=14,
 )
 
@@ -200,11 +200,14 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
     past_db   = db_all[db_all['開催日'] < today_dt]   if not db_all.empty   else db_all
     past_slim = db_slim[db_slim['開催日'] < today_dt]  if not db_slim.empty  else pd.DataFrame()
 
+    # num_to_bibs からライン順序を保持して line_map を構築
+    # ※ num_to_line の挿入順に依存すると順序が崩れるため num_to_bibs を使う
     line_map = {}
-    for num, lno in num_to_line.items():
+    for num, bibs_str in num_to_bibs.items():
+        lno = num_to_line.get(num, 0)
         if lno not in line_map:
-            line_map[lno] = []
-        line_map[lno].append(num)
+            bibs_list = [int(b) for b in bibs_str.split('-') if b.isdigit()]
+            line_map[lno] = bibs_list
 
     player_scores = {}
     for _, row in race_card.iterrows():
@@ -251,16 +254,16 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
         ev = (base*0.4 + ip*1.5 + ep*1.2 + dp*bp['makuri'] + bp_v*bp['sashi']
               + nb*2.0 + sp*0.5 + pos_b + (3.0 if is_m else 0) - (2.0 if is_u else 0))
         player_scores[num] = {'name':str(row.get('選手名','')), 'ev':ev,
-                               'ip':ip, 'is_monster':is_m}
+                               'ip':ip, 'is_monster':is_m, 'pos_in_line':pos}
 
     ranked = sorted(player_scores.items(), key=lambda x: x[1]['ev'], reverse=True)
     if len(ranked) < 3: return None
 
-    # カオス判定: ライン先頭でIP≥5.5の選手が2人以上 → チャオス展開
+    # カオス判定: ライン先頭でIP≥5.5の選手が2人以上 → カオス展開
+    # ※ バックテスト(_verify_stats.py)と完全同一ロジック
     strong_leaders = [
         n for n, d in player_scores.items()
-        if d['ip'] >= 5.5
-        and line_map.get(num_to_line.get(n, 0), [None])[0] == n
+        if d['ip'] >= 5.5 and d['pos_in_line'] == 1
     ]
     is_chaos = len(strong_leaders) >= 2
 
