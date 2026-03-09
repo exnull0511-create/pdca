@@ -276,9 +276,9 @@ def send_daily_summary(summary: dict) -> bool:
     color   = COLOR_HIT if profit >= 0 else COLOR_MISS
     sign    = '+' if profit >= 0 else ''
 
-    hit_lines  = [f"✅ {h['venue']} {h['race_no']}R  `{h['result_combo']}`  +¥{h['profit']:,}"
+    hit_lines  = [f"✅ {h['venue']} {int(h['race_no'])}R  `{h['result_combo']}`  +¥{int(h['profit']):,}"
                   for h in summary['hits']] or ["なし"]
-    miss_lines = [f"❌ {m['venue']} {m['race_no']}R  `{m['result_combo']}`"
+    miss_lines = [f"❌ {m['venue']} {int(m['race_no'])}R  `{m['result_combo']}`"
                   for m in summary['misses']] or ["なし"]
 
     embed = {

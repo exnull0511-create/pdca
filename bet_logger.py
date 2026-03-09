@@ -168,9 +168,10 @@ def get_daily_summary(target_date: str | None = None) -> dict:
     today = target_date or date.today().isoformat()
     rows  = [r for r in _load_all() if r["date"] == today]
 
-    total_bet    = sum(int(r["total_bet"]) for r in rows)
-    total_payout = sum(int(r["payout"]) for r in rows if r["status"] in ("hit", "miss"))
-    profit       = sum(int(r["profit"]) for r in rows if r["status"] in ("hit", "miss"))
+    settled  = [r for r in rows if r["status"] in ("hit", "miss")]
+    total_bet    = sum(int(r["total_bet"]) for r in settled)
+    total_payout = sum(int(r["payout"])    for r in settled)
+    profit       = sum(int(r["profit"])    for r in settled)
     hits         = [r for r in rows if r["status"] == "hit"]
     misses       = [r for r in rows if r["status"] == "miss"]
     pending      = [r for r in rows if r["status"] == "pending"]
