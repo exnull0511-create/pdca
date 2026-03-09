@@ -324,11 +324,17 @@ def main():
 
     # ── Phase0: 発走済みレースの結果確認 ─────────────────────────────────
     pending = get_pending_races()
+    today_str = today.strftime('%Y-%m-%d')
+    # 当日以外の古いpendingはスキップ（前日以前の未処理ログ）
+    pending = [p for p in pending if p.get('date', '') == today_str]
     if pending:
         print(f"\n🔎 結果確認: {len(pending)}件")
         scraper0 = KdreamsScraper()
         for pr in pending:
-            res = get_race_result(scraper0, f"https://keirin.kdreams.jp/{pr.get('venue_slug') or pr['venue']}/racedetail/{pr['race_id']}/")
+            venue_slug = pr.get('venue_slug', '') or pr.get('venue', '')
+            # ?pageType=result を付与して結果ページを取得
+            result_url = f"https://keirin.kdreams.jp/{venue_slug}/racedetail/{pr['race_id']}/?pageType=result"
+            res = get_race_result(scraper0, result_url)
             if res:
                 updated = update_result(pr['race_id'], res['combo'], res['payout'])
                 if updated:

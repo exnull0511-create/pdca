@@ -14,3 +14,7 @@ _debug_*.py
 
 # ローカルのみの大きいDB
 data/S級選手究極DB*.xlsx
+
+# 機密情報（Webhook URL など）
+.env
+setup_github_secrets.py
