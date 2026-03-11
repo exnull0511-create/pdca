@@ -361,19 +361,17 @@ def main():
         print("開催なし or 取得失敗")
         return
 
-    # ── 残レースチェック: S級レース終了後は収支サマリーを送って終了 ─────────
-    remaining = [r for r in races if r.get('deadline_time') and r['deadline_time'] > now]
-    if not remaining:
-        print("✅ 本日のS級レースは全て終了。収支サマリーを送信して終了します。")
-        summary = get_daily_summary()
-        if summary and (summary.get('n_races', 0) > 0):
-            send_daily_summary(summary)
-        return
-
     # ── 時間外ガード: JST 21:05 以降は予想通知を行わない ─────────────────────
-    # cron-job.org の workflow_dispatch が時間外に届いても誤通知しないよう保護
+    # ★ 全レース終了後の毎分サマリー送信を防ぐため、残レースチェックより前に配置
     if now.hour > 21 or (now.hour == 21 and now.minute >= 5):
         print(f"🕐 {now.strftime('%H:%M')} — 21:05以降のため予想通知をスキップ（結果確認のみ実施済み）")
+        return
+
+    # ── 残レースチェック: 全S級レース終了後は終了 ───────────────────────────
+    # 日次サマリーは weekly_summary.yml（毎日 21:00 JST）に委譲
+    remaining = [r for r in races if r.get('deadline_time') and r['deadline_time'] > now]
+    if not remaining:
+        print("✅ 本日のS級レースは全て終了。（日次サマリーは 21:00 JST の weekly_summary.yml から送信）")
         return
 
     # bets_logで重複チェックするのでcronが何度叩いても安全
