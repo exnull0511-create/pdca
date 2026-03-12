@@ -192,8 +192,7 @@ def get_race_info(scraper: KdreamsScraper, race_url: str) -> tuple[pd.DataFrame,
 def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
                    odds_dict, db_all, db_slim, nobi_col, today_dt):
     bp = BANK_DICT.get(venue, {'roi_tier':'mid','sashi':1.0,'makuri':1.0})
-    if STRATEGY_CFG['skip_low_bank'] and bp['roi_tier'] == 'low':
-        return None
+    low_bank = STRATEGY_CFG['skip_low_bank'] and bp['roi_tier'] == 'low'
     if race_card is None or race_card.empty:
         return None
 
@@ -268,8 +267,11 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
     is_chaos = len(strong_leaders) >= 2
 
     top_ev = ranked[0][1]['ev']
-    if pd.isna(top_ev) or top_ev < STRATEGY_CFG['min_top_ev']: return None
-    if is_chaos and STRATEGY_CFG['skip_chaos']: return None
+    if pd.isna(top_ev): return None
+    # ── グレード判定（フィルタ=スキップではなく☆で表現） ─────────────────
+    low_ev    = top_ev < STRATEGY_CFG['min_top_ev']
+    chaos_hit = is_chaos and STRATEGY_CFG['skip_chaos']
+    grade = "☆" if (low_bank or low_ev or chaos_hit) else "☆☆☆"
 
     all_nums = [n for n,_ in ranked]
     max_e = ranked[0][1]['ev']
@@ -310,6 +312,7 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
         'axis_ev': player_scores[axis_num]['ev'],      # 軸選手の実EV
         'axis':    f"車番{axis_num} {player_scores[axis_num]['name']}",
         'bets':    list(zip(bets, alloc)), 'total': sum(alloc),
+        'grade':   grade,
     }
 
 # ── Discord 通知は send_discord.py に失買──────────────────────────────────────────
@@ -346,12 +349,14 @@ def main():
                         hit     = row['status'] == 'hit'
                         profit  = int(row['profit'])
                         payout  = int(row['payout'])
-                        send_race_result(
-                            venue=pr['venue'], race_no=int(pr['race_no']),
-                            race_name=pr.get('race_name', 'S級'),
-                            result_combo=res['combo'], payout=payout,
-                            hit=hit, profit=profit, total_today=total_today,
-                        )
+                        # ☆☆☆（勝負レース）のみ結果をDiscordに投稿
+                        if pr.get('grade', '☆☆☆') == '☆☆☆':
+                            send_race_result(
+                                venue=pr['venue'], race_no=int(pr['race_no']),
+                                race_name=pr.get('race_name', 'S級'),
+                                result_combo=res['combo'], payout=payout,
+                                hit=hit, profit=profit,
+                            )
             time.sleep(0.5)
 
     # 全レース取得
@@ -446,6 +451,7 @@ def main():
                 total=result['total'],
                 status='pending',
                 venue_slug=r.get('venue_slug', ''),
+                grade=result['grade'],
             )
             lines_for_discord = [
                 {'line': lno, 'bibs': [b for b, ln in num_to_line.items() if ln == lno]}
@@ -459,8 +465,9 @@ def main():
                 mins_left=mins_left,
                 lines=lines_for_discord,
                 result=result,
+                grade=result['grade'],
             )
-            print(f"  ✅ 通知送信: {venue} {race_no}R  軸:{result['axis']}")
+            print(f"  ✅ 通知送信: {venue} {race_no}R  {result['grade']}  軸:{result['axis']}")
         else:
             print(f"  ⏭️  スキップ（EVScore/カオスフィルタ）")
 

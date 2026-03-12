@@ -1,0 +1,51 @@
+name: 競輪予想 夕セッション (Evening)
+
+on:
+  schedule:
+    - cron: "30 4 * * *"   # 毎日 13:30 JST (UTC 4:30)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "dry-run モード (sleep省略・Discord送信なし)"
+        required: false
+        default: "false"
+
+jobs:
+  evening:
+    runs-on: ubuntu-latest
+    timeout-minutes: 450
+
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 依存関係をインストールする
+        run: pip install -r requirements.txt
+
+      - name: 夕セッション実行 (13:30〜21:00 のレース担当)
+        env:
+          DISCORD_WEBHOOK_URL:  ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_FREE: ${{ secrets.DISCORD_WEBHOOK_FREE }}
+          DB_SLIM_PATH:  data/S級DB_slim.xlsx
+          DB_OLD_PATH:   "data/S級選手究極DB(1).xlsx"
+        run: |
+          DRY_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_FLAG="--dry-run"
+          fi
+          python race_day.py --session evening $DRY_FLAG
+
+      - name: bets_log を保存
+        if: always()
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name  "GitHub Actions"
+          git pull --rebase origin main || true
+          git add data/bets_log.csv
+          git diff --cached --quiet || git commit -m "chore: bets_log update (evening)"
+          git push || true

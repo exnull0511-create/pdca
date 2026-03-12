@@ -54,13 +54,19 @@ def send_prediction(
     mins_left: int,
     lines: list[dict],        # [{'line':1,'bibs':[1,5,7]}, ...]
     result: dict,             # run_prediction() の返り値
+    grade: str = "☆☆☆",    # "☆☆☆"=勝負 / "☆"=ルック
 ) -> bool:
     """
     買い推奨通知を有料チャンネルに送信する。
 
     lines: [{'line': 1, 'bibs': [1, 5, 7]}, ...]
     result: {'venue','race_no','top_ev','axis','bets':[('5-1-7',200),...],'total':int}
+    grade: '☆☆☆' → シアン(grade勝負) / '☆' → グレー(ルック)
     """
+    is_bet = (grade == "☆☆☆")
+    color  = COLOR_BET if is_bet else 0x95a5a6
+    icon   = "🎯" if is_bet else "👀"
+    label  = "勝負" if is_bet else "ルック"
     # ライン情報の整形
     line_text = ""
     for li in lines:
@@ -75,8 +81,8 @@ def send_prediction(
         bets_text += f"> `{combo}`  ¥{amt:,}\n"
 
     embed = {
-        "title": f"🎯  {venue}  {race_no}R  {race_name}",
-        "color": COLOR_BET,
+        "title": f"{icon} {grade}【{label}】 {venue}  {race_no}R  {race_name}",
+        "color": color,
         "description": (
             f"**発走** {start_str}　**締切** {deadline_str}（あと **{mins_left}分**）"
         ),
@@ -220,7 +226,7 @@ def send_cancel(
 def send_race_result(
     venue: str, race_no: int, race_name: str,
     result_combo: str, payout: int,
-    hit: bool, profit: int, total_today: int,
+    hit: bool, profit: int, total_today: int = 0,
 ) -> bool:
     """
     レース1件の結果（的中/外れ）をDiscordに通知する。
@@ -230,13 +236,12 @@ def send_race_result(
         payout: 払戻金額（的中時のみ）
         hit: 的中したか
         profit: このレースの収支
-        total_today: 本日累計収支
+        total_today: 本日累計収支（現在は表示しない）
     """
     color = COLOR_HIT if hit else COLOR_MISS
     icon  = "🎊 的中！" if hit else "💀 外れ"
 
-    profit_str  = f"{'+'if profit>=0 else ''}¥{profit:,}"
-    today_str   = f"{'+'if total_today>=0 else ''}¥{total_today:,}"
+    profit_str = f"{'+'if profit>=0 else ''}¥{profit:,}"
 
     fields = [
         {
@@ -246,7 +251,7 @@ def send_race_result(
         },
         {
             "name": "💰 収支",
-            "value": f"> このレース: **{profit_str}**\n> 本日累計: **{today_str}**",
+            "value": f"> このレース: **{profit_str}**",
             "inline": True,
         },
     ]
@@ -268,37 +273,10 @@ def send_race_result(
 
 def send_daily_summary(summary: dict) -> bool:
     """
-    日次収支サマリーを送信する（DISCORD_WEBHOOK_FREE があれば無料側に投稿）。
-
-    summary: bet_logger.get_daily_summary() の返り値
+    日次収支サマリー送信（現在は無効化 — 予想チャンネルには投稿しない）。
     """
-    profit  = summary['profit']
-    color   = COLOR_HIT if profit >= 0 else COLOR_MISS
-    sign    = '+' if profit >= 0 else ''
-
-    hit_lines  = [f"✅ {h['venue']} {int(h['race_no'])}R  `{h['result_combo']}`  +¥{int(h['profit']):,}"
-                  for h in summary['hits']] or ["なし"]
-    miss_lines = [f"❌ {m['venue']} {int(m['race_no'])}R  `{m['result_combo']}`"
-                  for m in summary['misses']] or ["なし"]
-
-    embed = {
-        "title": f"📊 {summary['date']} 予想結果サマリー",
-        "color": color,
-        "description": (
-            f"投資 ¥{summary['total_bet']:,}  |  "
-            f"払戻 ¥{summary['payout']:,}  |  "
-            f"収支 **{sign}¥{profit:,}**  |  "
-            f"ROI **{summary['roi']}%**"
-        ),
-        "fields": [
-            {"name": f"🎯 的中 ({len(summary['hits'])}件)", "value": "\n".join(hit_lines),  "inline": False},
-            {"name": f"💀 ハズレ ({len(summary['misses'])}件)", "value": "\n".join(miss_lines), "inline": False},
-        ],
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "footer": {"text": "※ 投資は自己責任でお願いします"},
-    }
-    payload = {"username": "競輪予想Bot", "embeds": [embed]}
-    return _post_webhook(WEBHOOK_FREE or WEBHOOK_PAID, payload)
+    print("[send_daily_summary] サマリー投稿は無効化されています")
+    return True
 
 
 

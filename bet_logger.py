@@ -18,7 +18,7 @@ BETS_LOG = Path(os.environ.get("BETS_LOG_PATH", "data/bets_log.csv"))
 COLUMNS = [
     "date", "race_id", "venue", "venue_slug", "race_no", "race_name",
     "start_time", "bets_json", "total_bet",
-    "result_combo", "payout", "profit", "status",
+    "result_combo", "payout", "profit", "status", "grade",
 ]
 
 
@@ -32,7 +32,7 @@ def _ensure_file():
 def log_bet(race_id: str, venue: str, race_no: int, race_name: str,
             start_time: datetime, bets: list[tuple[str, int]], total: int,
             status: str = "pending", deadline_str: str = "",
-            venue_slug: str = ""):
+            venue_slug: str = "", grade: str = "☆☆☆"):
     """
     買い予測を記録する。同一 race_id が既にある場合は上書きしない。
     status: "candidate"(Phase1候補) / "pending"(Phase2確定済み)
@@ -59,6 +59,7 @@ def log_bet(race_id: str, venue: str, race_no: int, race_name: str,
         "payout":       0,
         "profit":       -total,
         "status":       status,
+        "grade":        grade,
     }
     with open(BETS_LOG, "a", newline="", encoding="utf-8") as f:
         csv.DictWriter(f, fieldnames=COLUMNS).writerow(row)
