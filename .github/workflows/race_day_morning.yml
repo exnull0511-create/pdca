@@ -33,12 +33,13 @@ jobs:
           DISCORD_WEBHOOK_FREE: ${{ secrets.DISCORD_WEBHOOK_FREE }}
           DB_SLIM_PATH:  data/S級DB_slim.xlsx
           DB_OLD_PATH:   "data/S級選手究極DB(1).xlsx"
+          PYTHONUNBUFFERED: "1"
         run: |
           DRY_FLAG=""
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             DRY_FLAG="--dry-run"
           fi
-          python race_day.py --session morning $DRY_FLAG
+          python -u race_day.py --session morning $DRY_FLAG
 
       - name: bets_log を保存
         if: always()
