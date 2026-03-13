@@ -29,8 +29,8 @@ from bs4 import BeautifulSoup
 from kdreams_scraper import KdreamsScraper
 from fetch_schedule import fetch_today_f1_g3_races
 from fetch_results import get_race_result
-from bet_logger import log_bet, update_result, get_pending_races
-from send_discord import send_prediction, send_race_result
+from bet_logger import log_bet, update_result, get_pending_races, get_daily_summary
+from send_discord import send_prediction, send_daily_summary
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
 DB_SLIM_PATH = os.environ.get("DB_SLIM_PATH", "data/S級DB_slim.xlsx")
@@ -395,13 +395,9 @@ def check_result_later(scraper: KdreamsScraper, race: dict, bets: list,
     update_result(race_id=race_id, result_combo=combo, payout=payout)
 
     if dry_run:
-        print(f"  [dry-run] 結果通知省略: {combo} {'✅的中' if hit else '❌外れ'}")
+        print(f"  [dry-run] 結果記録省略: {combo} {'✅的中' if hit else '❌外れ'}")
         return
 
-    send_race_result(
-        venue=venue, race_no=race_no, race_name=race_name,
-        result_combo=combo, payout=payout, hit=hit, profit=profit,
-    )
     print(f"  {'✅ 的中' if hit else '❌ 外れ'}  {combo}  払戻¥{payout:,}")
 
 
@@ -502,9 +498,10 @@ def process_race(race: dict, scraper: KdreamsScraper,
     else:
         print(f"  [dry-run] Discord送信省略")
 
-    # ── ☆☆☆のみ結果通知 ─────────────────────────────────────────────────────
+    # ── ☆☆☆のみ結果収集（インライン待機なし → main() で後処理）─────────
     if grade == '☆☆☆':
-        check_result_later(scraper, race, result['bets'], race_id, dry_run)
+        return {'race': race, 'bets': result['bets'], 'race_id': race_id}
+    return None
 
 
 # ── メイン ───────────────────────────────────────────────────────────────────
@@ -539,10 +536,13 @@ def main():
     scraper = KdreamsScraper()
 
     print(f"\n🚀 処理開始: {len(races)}R")
+    win_races = []  # ☆☆☆ レースを収集
     for i, race in enumerate(races, 1):
         print(f"\n[{i}/{len(races)}]", end='')
         try:
-            process_race(race, scraper, db_all, db_slim, nobi_col, today_dt, dry_run)
+            info = process_race(race, scraper, db_all, db_slim, nobi_col, today_dt, dry_run)
+            if info:
+                win_races.append(info)
         except KeyboardInterrupt:
             print("\n⛔ 中断されました")
             break
@@ -552,7 +552,30 @@ def main():
             traceback.print_exc()
             time.sleep(5)
 
-    print(f"\n✅ セッション '{args.session}' 完了")
+    print(f"\n✅ セッション '{args.session}' 全レース予想完了")
+
+    # ── ☆☆☆ 結果収集（全レース後）────────────────────────────────────────────
+    if win_races:
+        print(f"\n🏁 ☆☆☆ {len(win_races)}R の結果収集開始...")
+        for info in win_races:
+            check_result_later(
+                scraper, info['race'], info['bets'], info['race_id'], dry_run
+            )
+    else:
+        print("\n（本セッションに☆☆☆レースなし）")
+
+    # ── 日次収支サマリー投稿 ──────────────────────────────────────────────────
+    print("\n📊 日次収支サマリーを投稿中...")
+    summary = get_daily_summary(grade='☆☆☆')
+    print(f"  ☆☆☆: {summary['n_races']}R  的中{len(summary['hits'])}件  "
+          f"収支{'+' if summary['profit']>=0 else ''}¥{summary['profit']:,}")
+    if not dry_run:
+        send_daily_summary(summary)
+        print("  ✅ Discord投稿完了")
+    else:
+        print("  [dry-run] Discord投稿省略")
+
+    print(f"\n🏁 セッション '{args.session}' 完了")
 
 
 if __name__ == "__main__":

@@ -163,11 +163,14 @@ def cancel_candidate(race_id: str) -> bool:
     return False
 
 
-def get_daily_summary(target_date: str | None = None) -> dict:
-    """日次収支サマリーを返す"""
+def get_daily_summary(target_date: str | None = None, grade: str | None = None) -> dict:
+    """日次収支サマリーを返す。grade を指定するとそのグレードのみ集計。"""
     _ensure_file()
     today = target_date or date.today().isoformat()
     rows  = [r for r in _load_all() if r["date"] == today]
+
+    if grade:
+        rows = [r for r in rows if r.get("grade", "") == grade]
 
     settled  = [r for r in rows if r["status"] in ("hit", "miss")]
     total_bet    = sum(int(r["total_bet"]) for r in settled)
@@ -179,6 +182,7 @@ def get_daily_summary(target_date: str | None = None) -> dict:
 
     return {
         "date":       today,
+        "grade":      grade,
         "total_bet":  total_bet,
         "payout":     total_payout,
         "profit":     profit,
@@ -187,6 +191,7 @@ def get_daily_summary(target_date: str | None = None) -> dict:
         "misses":     misses,
         "pending":    pending,
         "n_races":    len(rows),
+        "settled":    settled,
     }
 
 

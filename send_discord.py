@@ -273,10 +273,67 @@ def send_race_result(
 
 def send_daily_summary(summary: dict) -> bool:
     """
-    日次収支サマリー送信（現在は無効化 — 予想チャンネルには投稿しない）。
+    日次収支サマリー（☆☆☆勝負レースのトータル）を迓む。
+    bet_logger.get_daily_summary(grade='☆☆☆') の返り値を渡す。
     """
-    print("[send_daily_summary] サマリー投稿は無効化されています")
-    return True
+    profit   = summary['profit']
+    n_races  = summary['n_races']
+    hits     = summary['hits']
+    misses   = summary['misses']
+    pending  = summary['pending']
+    n_settled = len(hits) + len(misses)
+    hit_rate  = round(len(hits) / n_settled * 100, 1) if n_settled else 0
+    color     = COLOR_HIT if profit >= 0 else COLOR_MISS
+    sign      = '+' if profit >= 0 else ''
+    today     = summary.get('date', datetime.now().strftime('%Y-%m-%d'))
+
+    # レース別明細
+    detail_lines = []
+    for r in sorted(hits + misses + pending,
+                    key=lambda x: x.get('start_time', '')):
+        icon = '✅' if r['status'] == 'hit' else ('❌' if r['status'] == 'miss' else '⏳')
+        prf  = int(r['profit'])
+        ps   = f"{'+'if prf>=0 else ''}¥{prf:,}"
+        detail_lines.append(
+            f"{icon} **{r['venue']} {r['race_no']}R** — {ps}"
+            + (f"  `{r['result_combo']}`" if r.get('result_combo') else "")
+        )
+
+    detail_text = '\n'.join(detail_lines) if detail_lines else 'データなし'
+
+    embed = {
+        'title': f'\U0001f3c6  {today}  ☆☆☆勝負レース  日次収支報告',
+        'color': color,
+        'fields': [
+            {
+                'name': '📊 本日サマリー',
+                'value': (
+                    f'> 勝負対象R数: **{n_races}R**\n'
+                    f'> 的中: **{len(hits)}件**  外れ: {len(misses)}件'
+                    + (f'  未確定: {len(pending)}件' if pending else '') + '\n'
+                    f'> 的中率: **{hit_rate}%**\n'
+                    f'> 投賄合計: ¥{summary["total_bet"]:,}\n'
+                    f'> 払戻合計: ¥{summary["payout"]:,}\n'
+                    f'> 💰 包括収支: **{sign}¥{profit:,}**\n'
+                    f'> ROI: **{summary["roi"]}%**'
+                ),
+                'inline': False,
+            },
+            {
+                'name': '📈 レース別明細',
+                'value': detail_text[:1000],
+                'inline': False,
+            },
+        ],
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'footer': {'text': '※ 投賄は自己責任でお願いします'},
+    }
+    payload = {
+        'username': '競輪予想Bot',
+        'avatar_url': 'https://cdn-icons-png.flaticon.com/512/3176/3176369.png',
+        'embeds': [embed],
+    }
+    return _post_webhook(WEBHOOK_PAID, payload)
 
 
 
