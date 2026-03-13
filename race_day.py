@@ -392,8 +392,7 @@ def check_result_later(scraper: KdreamsScraper, race: dict, bets: list,
     invest = sum(a for _, a in bets)
     profit = return_amt - invest
 
-    update_result(race_id=race_id, result_combo=combo, payout=payout,
-                  profit=profit, status='hit' if hit else 'miss')
+    update_result(race_id=race_id, result_combo=combo, payout=payout)
 
     if dry_run:
         print(f"  [dry-run] 結果通知省略: {combo} {'✅的中' if hit else '❌外れ'}")
