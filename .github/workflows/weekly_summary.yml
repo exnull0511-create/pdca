@@ -1,11 +1,10 @@
 name: 競輪予想 収支レポート
 
 on:
-  # サマリー投稿は不要のためスケジュール無効化（手動実行のみ残す）
-  # schedule:
-  #   - cron: '0 12 * * *'   # 日次: 毎日 21:00 JST
-  #   - cron: '0 0 * * 1'    # 週次: 毎週月曜 09:00 JST
-  #   - cron: '0 0 1 * *'    # 月次: 毎月1日 09:00 JST
+  schedule:
+    - cron: '30 12 * * *'   # 日次: 毎日 21:30 JST (UTC 12:30)
+    - cron: '0 0 * * 1'     # 週次: 毎週月曜 09:00 JST (UTC 0:00)
+    - cron: '0 0 1 * *'     # 月次: 毎月1日 09:00 JST (UTC 0:00)
   workflow_dispatch:
     inputs:
       mode:
@@ -37,7 +36,7 @@ jobs:
 
       # 日次レポート（毎日21時 or 手動）
       - name: 日次レポート
-        if: github.event.schedule == '0 12 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'daily')
+        if: github.event.schedule == '30 12 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'daily')
         env:
           DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_WEBHOOK_STATS: ${{ secrets.DISCORD_WEBHOOK_STATS }}

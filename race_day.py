@@ -18,6 +18,7 @@ cron-job.org 不要。GitHub Actions の schedule トリガーで2セッショ�
 import argparse
 import os
 import re
+import subprocess
 import sys
 import time
 import pandas as pd
@@ -29,8 +30,11 @@ from bs4 import BeautifulSoup
 from kdreams_scraper import KdreamsScraper
 from fetch_schedule import fetch_today_f1_g3_races
 from fetch_results import get_race_result
-from bet_logger import log_bet, update_result, get_pending_races, get_daily_summary
-from send_discord import send_prediction, send_daily_summary
+from bet_logger import (
+    log_bet, update_result, get_pending_races, get_daily_summary,
+    _load_all, _save_all,
+)
+from send_discord import send_prediction, send_race_result, send_daily_summary
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
 DB_SLIM_PATH = os.environ.get("DB_SLIM_PATH", "data/S級DB_slim.xlsx")
@@ -93,6 +97,48 @@ def nobi_score(v):
 
 def senpo_lead(v): return SENPO_LEAD.get(str(v).strip(), 1)
 def norm(s): return str(s).replace(' ', '').replace('\u3000', '').strip()
+
+
+# ── bets_log 即時保存 ─────────────────────────────────────────────────────────
+def save_bets_log_to_git(msg: str = "auto: bets_log update"):
+    """bets_log.csv を即時 git commit & push する（GitHub Actions 上で呼ぶ前提）"""
+    try:
+        subprocess.run(["git", "add", "data/bets_log.csv"],
+                       check=True, timeout=10, capture_output=True)
+        result = subprocess.run(["git", "diff", "--cached", "--quiet"],
+                                timeout=5, capture_output=True)
+        if result.returncode != 0:  # 差分あり
+            subprocess.run(
+                ["git", "commit", "-m", msg],
+                check=True, timeout=10, capture_output=True,
+            )
+            subprocess.run(
+                ["git", "push"],
+                check=True, timeout=30, capture_output=True,
+            )
+            print(f"  📁 bets_log.csv push成功")
+    except subprocess.TimeoutExpired:
+        print(f"  ⚠️ bets_log push タイムアウト")
+    except subprocess.CalledProcessError as e:
+        print(f"  ⚠️ bets_log push失敗: {e}")
+    except Exception as e:
+        print(f"  ⚠️ bets_log push予期しないエラー: {e}")
+
+
+def expire_old_pending():
+    """前日以前の date を持つ pending レコードを expired に変更する。"""
+    today = date.today().isoformat()
+    rows = _load_all()
+    changed = 0
+    for r in rows:
+        if r.get('status') == 'pending' and r.get('date', '') != today:
+            r['status'] = 'expired'
+            r['profit'] = 0
+            changed += 1
+    if changed:
+        _save_all(rows)
+        print(f"⏰ {changed}件の古い pending を expired に変更しました")
+        save_bets_log_to_git(f"auto: expire {changed} stale pending")
 
 
 # ── DB ロード ──────────────────────────────────────────────────────────────────
@@ -355,10 +401,10 @@ def collect_races(session: str, target_date: date, dry_run: bool) -> list[dict]:
     return filtered
 
 
-# ── 結果確認・通知（☆☆☆のみ） ─────────────────────────────────────────────
+# ── 結果確認・通知（全グレード対応） ──────────────────────────────────────────
 def check_result_later(scraper: KdreamsScraper, race: dict, bets: list,
-                       race_id: str, dry_run: bool):
-    """deadline + RESULT_AFTER_MIN 分後に結果を取得して Discord に投稿。"""
+                       race_id: str, grade: str, dry_run: bool):
+    """deadline + RESULT_AFTER_MIN 分後に結果を取得してログ更新。☆☆☆のみDiscord投稿。"""
     deadline = race['_deadline']
     wait_until = deadline + timedelta(minutes=RESULT_AFTER_MIN)
     now = datetime.now()
@@ -394,11 +440,23 @@ def check_result_later(scraper: KdreamsScraper, race: dict, bets: list,
 
     update_result(race_id=race_id, result_combo=combo, payout=payout)
 
+    if not dry_run:
+        save_bets_log_to_git(f"auto: result {venue} {race_no}R {'hit' if hit else 'miss'}")
+
     if dry_run:
-        print(f"  [dry-run] 結果記録省略: {combo} {'✅的中' if hit else '❌外れ'}")
+        print(f"  [dry-run] 結果: {combo} {'✅的中' if hit else '❌外れ'} ({grade})")
         return
 
-    print(f"  {'✅ 的中' if hit else '❌ 外れ'}  {combo}  払戻¥{payout:,}")
+    print(f"  {'✅ 的中' if hit else '❌ 外れ'}  {combo}  払戻¥{payout:,}  ({grade})")
+
+    # Discord通知は☆☆☆（勝負レース）のみ
+    if grade == '☆☆☆':
+        send_race_result(
+            venue=venue, race_no=race_no, race_name=race_name,
+            result_combo=combo, payout=int(payout) if hit else 0,
+            hit=hit, profit=profit,
+        )
+        print(f"  📢 Discord結果通知送信")
 
 
 # ── 1レース処理 ───────────────────────────────────────────────────────────────
@@ -479,6 +537,12 @@ def process_race(race: dict, scraper: KdreamsScraper,
         grade=grade,
     )
 
+    # ── bets_log 即時保存 ─────────────────────────────────────────────────────
+    if not dry_run:
+        save_bets_log_to_git(
+            f"auto: bet {venue} {race_no}R {grade}"
+        )
+
     # ── Discord 通知 ──────────────────────────────────────────────────────────
     lines_for_discord = [
         {'line': lno, 'bibs': [b for b, l in num_to_line.items() if l == lno]}
@@ -498,10 +562,8 @@ def process_race(race: dict, scraper: KdreamsScraper,
     else:
         print(f"  [dry-run] Discord送信省略")
 
-    # ── ☆☆☆のみ結果収集（インライン待機なし → main() で後処理）─────────
-    if grade == '☆☆☆':
-        return {'race': race, 'bets': result['bets'], 'race_id': race_id}
-    return None
+    # ── 全グレードの結果収集情報を返す（main() で後処理） ─────────────────────
+    return {'race': race, 'bets': result['bets'], 'race_id': race_id, 'grade': grade}
 
 
 # ── メイン ───────────────────────────────────────────────────────────────────
@@ -523,6 +585,9 @@ def main():
     print(f"🏁 race_day.py  session={args.session}  date={target_date}"
           f"  {'[DRY-RUN]' if dry_run else ''}")
 
+    # ── stale pending 自動 expire ─────────────────────────────────────────────
+    expire_old_pending()
+
     # DB 読込（起動時1回のみ）
     db_all, db_slim, nobi_col = load_db()
 
@@ -536,13 +601,13 @@ def main():
     scraper = KdreamsScraper()
 
     print(f"\n🚀 処理開始: {len(races)}R")
-    win_races = []  # ☆☆☆ レースを収集
+    all_logged_races = []  # 全グレードのレースを収集（結果確認用）
     for i, race in enumerate(races, 1):
         print(f"\n[{i}/{len(races)}]", end='')
         try:
             info = process_race(race, scraper, db_all, db_slim, nobi_col, today_dt, dry_run)
             if info:
-                win_races.append(info)
+                all_logged_races.append(info)
         except KeyboardInterrupt:
             print("\n⛔ 中断されました")
             break
@@ -554,26 +619,32 @@ def main():
 
     print(f"\n✅ セッション '{args.session}' 全レース予想完了")
 
-    # ── ☆☆☆ 結果収集（全レース後）────────────────────────────────────────────
-    if win_races:
-        print(f"\n🏁 ☆☆☆ {len(win_races)}R の結果収集開始...")
-        for info in win_races:
+    # ── 全レース結果収集（☆☆☆と☆の両方） ─────────────────────────────────────
+    if all_logged_races:
+        n_bet = sum(1 for r in all_logged_races if r['grade'] == '☆☆☆')
+        n_look = sum(1 for r in all_logged_races if r['grade'] != '☆☆☆')
+        print(f"\n🏁 結果収集開始: ☆☆☆ {n_bet}R + ☆ {n_look}R = 計{len(all_logged_races)}R")
+        for info in all_logged_races:
             check_result_later(
-                scraper, info['race'], info['bets'], info['race_id'], dry_run
+                scraper, info['race'], info['bets'], info['race_id'],
+                info['grade'], dry_run,
             )
     else:
-        print("\n（本セッションに☆☆☆レースなし）")
+        print("\n（本セッションに対象レースなし）")
 
-    # ── 日次収支サマリー投稿 ──────────────────────────────────────────────────
-    print("\n📊 日次収支サマリーを投稿中...")
-    summary = get_daily_summary(grade='☆☆☆')
-    print(f"  ☆☆☆: {summary['n_races']}R  的中{len(summary['hits'])}件  "
-          f"収支{'+' if summary['profit']>=0 else ''}¥{summary['profit']:,}")
-    if not dry_run:
-        send_daily_summary(summary)
-        print("  ✅ Discord投稿完了")
+    # ── 日次収支サマリー投稿（evening のみ） ──────────────────────────────────
+    if args.session == 'evening':
+        print("\n📊 日次収支サマリーを投稿中...")
+        summary = get_daily_summary(grade='☆☆☆')
+        print(f"  ☆☆☆: {summary['n_races']}R  的中{len(summary['hits'])}件  "
+              f"収支{'+' if summary['profit']>=0 else ''}¥{summary['profit']:,}")
+        if not dry_run:
+            send_daily_summary(summary)
+            print("  ✅ Discord投稿完了")
+        else:
+            print("  [dry-run] Discord投稿省略")
     else:
-        print("  [dry-run] Discord投稿省略")
+        print("\n（morningセッション — 日次サマリーは evening で投稿します）")
 
     print(f"\n🏁 セッション '{args.session}' 完了")
 

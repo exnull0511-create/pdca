@@ -27,6 +27,11 @@ jobs:
       - name: 依存関係をインストールする
         run: pip install -r requirements_cloud.txt
 
+      - name: Git設定 (スクリプト内 push 用)
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name  "GitHub Actions"
+
       - name: 夕セッション実行 (13:30〜21:00 のレース担当)
         env:
           DISCORD_WEBHOOK_URL:  ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -42,11 +47,9 @@ jobs:
           fi
           python -u race_day.py --session evening $DRY_FLAG
 
-      - name: bets_log を保存
+      - name: bets_log 最終保存 (フォールバック)
         if: always()
         run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name  "GitHub Actions"
           git pull --rebase origin main || true
           git add data/bets_log.csv
           git diff --cached --quiet || git commit -m "chore: bets_log update (evening)"
