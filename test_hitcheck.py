@@ -61,6 +61,7 @@ def add_test_pending():
         "payout":       0,
         "profit":       -TEST_TOTAL,
         "status":       "pending",
+        "grade":        "☆☆☆",
     }
     rows.append(test_row)
     _save_all(rows)

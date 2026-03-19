@@ -34,8 +34,9 @@ jobs:
 
       - name: 朝セッション実行 (8:00〜14:30 のレース担当)
         env:
-          DISCORD_WEBHOOK_URL:  ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DISCORD_WEBHOOK_FREE: ${{ secrets.DISCORD_WEBHOOK_FREE }}
+          DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_FREE:  ${{ secrets.DISCORD_WEBHOOK_FREE }}
+          DISCORD_WEBHOOK_STATS: ${{ secrets.DISCORD_WEBHOOK_STATS }}
           DB_SLIM_PATH:  data/S級DB_slim.xlsx
           DB_OLD_PATH:   "data/S級選手究極DB(1).xlsx"
           PYTHONUNBUFFERED: "1"

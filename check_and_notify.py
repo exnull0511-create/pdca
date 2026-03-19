@@ -32,7 +32,7 @@ from send_discord import send_prediction, send_skip, send_race_result, send_dail
 
 # ── 設定 ─────────────────────────────────────────────────────────────────────────────────
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL", "")
-DB_SLIM_PATH    = os.environ.get("DB_SLIM_PATH", "data/S級デビーslim.xlsx")
+DB_SLIM_PATH    = os.environ.get("DB_SLIM_PATH", "data/S級DB_slim.xlsx")
 DB_OLD_PATH     = os.environ.get("DB_OLD_PATH",  r"data/S級選手究極DB(1).xlsx")
 
 # 締切連動スケジューリング設定

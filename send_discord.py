@@ -312,7 +312,7 @@ def send_daily_summary(summary: dict) -> bool:
                     f'> 的中: **{len(hits)}件**  外れ: {len(misses)}件'
                     + (f'  未確定: {len(pending)}件' if pending else '') + '\n'
                     f'> 的中率: **{hit_rate}%**\n'
-                    f'> 投賄合計: ¥{summary["total_bet"]:,}\n'
+                    f'> 投資合計: ¥{summary["total_bet"]:,}\n'
                     f'> 払戻合計: ¥{summary["payout"]:,}\n'
                     f'> 💰 包括収支: **{sign}¥{profit:,}**\n'
                     f'> ROI: **{summary["roi"]}%**'
@@ -326,14 +326,16 @@ def send_daily_summary(summary: dict) -> bool:
             },
         ],
         'timestamp': datetime.utcnow().isoformat() + 'Z',
-        'footer': {'text': '※ 投賄は自己責任でお願いします'},
+        'footer': {'text': '※ 投資は自己責任でお願いします'},
     }
     payload = {
         'username': '競輪予想Bot',
         'avatar_url': 'https://cdn-icons-png.flaticon.com/512/3176/3176369.png',
         'embeds': [embed],
     }
-    return _post_webhook(WEBHOOK_PAID, payload)
+    # 日次サマリーは stats チャンネルに送信（DISCORD_WEBHOOK_STATS）
+    stats_url = os.environ.get("DISCORD_WEBHOOK_STATS", "") or WEBHOOK_PAID
+    return _post_webhook(stats_url, payload)
 
 
 

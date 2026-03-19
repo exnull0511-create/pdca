@@ -36,7 +36,8 @@ jobs:
       # ④ 予想 & Discord通知
       - name: Run prediction and notify Discord
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_STATS: ${{ secrets.DISCORD_WEBHOOK_STATS }}
           DB_SLIM_PATH: data/S級DB_slim.xlsx
           DB_OLD_PATH:  data/S級選手究極DB(1).xlsx
         run: python check_and_notify.py
