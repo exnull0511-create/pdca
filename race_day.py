@@ -543,24 +543,27 @@ def process_race(race: dict, scraper: KdreamsScraper,
             f"auto: bet {venue} {race_no}R {grade}"
         )
 
-    # ── Discord 通知 ──────────────────────────────────────────────────────────
-    lines_for_discord = [
-        {'line': lno, 'bibs': [b for b, l in num_to_line.items() if l == lno]}
-        for lno in sorted(set(num_to_line.values()))
-    ]
-    deadline_str = deadline.strftime('%H:%M')
-    mins_left    = max(0, int((deadline - datetime.now()).total_seconds() / 60))
+    # ── Discord 通知（☆☆☆勝負レースのみ） ──────────────────────────────────
+    if grade == '☆☆☆':
+        lines_for_discord = [
+            {'line': lno, 'bibs': [b for b, l in num_to_line.items() if l == lno]}
+            for lno in sorted(set(num_to_line.values()))
+        ]
+        deadline_str = deadline.strftime('%H:%M')
+        mins_left    = max(0, int((deadline - datetime.now()).total_seconds() / 60))
 
-    if not dry_run:
-        send_prediction(
-            venue=venue, race_no=race_no, race_name=race_name,
-            start_str=start_str, deadline_str=deadline_str,
-            mins_left=mins_left, lines=lines_for_discord,
-            result=result, grade=grade,
-        )
-        print(f"  ✅ Discord送信完了")
+        if not dry_run:
+            send_prediction(
+                venue=venue, race_no=race_no, race_name=race_name,
+                start_str=start_str, deadline_str=deadline_str,
+                mins_left=mins_left, lines=lines_for_discord,
+                result=result, grade=grade,
+            )
+            print(f"  ✅ Discord送信完了")
+        else:
+            print(f"  [dry-run] Discord送信省略")
     else:
-        print(f"  [dry-run] Discord送信省略")
+        print(f"  📝 ルック判定 → ログ保存のみ（Discord通知スキップ）")
 
     # ── 全グレードの結果収集情報を返す（main() で後処理） ─────────────────────
     return {'race': race, 'bets': result['bets'], 'race_id': race_id, 'grade': grade}

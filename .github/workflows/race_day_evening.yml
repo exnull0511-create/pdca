@@ -1,8 +1,8 @@
 name: 競輪予想 夕セッション (Evening)
 
 on:
-  schedule:
-    - cron: "30 4 * * *"   # 毎日 13:30 JST (UTC 4:30)
+  # schedule:
+  #   - cron: "30 4 * * *"   # 毎日 13:30 JST (UTC 4:30)
   workflow_dispatch:
     inputs:
       dry_run:

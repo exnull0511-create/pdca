@@ -14,6 +14,7 @@ payouts.xlsx は不要。racecard.xlsx + odds.xlsx + DB があれば動く。
   predict_{YYYYMMDD}.csv  — 買い目一覧（CSV: race_id, 組み合わせ, 金額）
 """
 
+import sys
 import argparse
 import pandas as pd
 import numpy as np
@@ -21,6 +22,12 @@ import warnings
 import datetime
 from pathlib import Path
 warnings.filterwarnings('ignore')
+
+# Windows CP932環境での絵文字・日本語出力エラーを防ぐ
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 # ──────────────────────────────────────────────────────────────────
 # ストラテジー固定（本採用: LOOSE_B）
