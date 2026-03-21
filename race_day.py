@@ -34,7 +34,7 @@ from bet_logger import (
     log_bet, update_result, get_pending_races, get_daily_summary,
     _load_all, _save_all,
 )
-from send_discord import send_prediction, send_race_result, send_daily_summary
+from send_discord import send_prediction, send_daily_summary
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
 DB_SLIM_PATH = os.environ.get("DB_SLIM_PATH", "data/S級DB_slim.xlsx")
@@ -498,15 +498,6 @@ def check_result_later(scraper: KdreamsScraper, race: dict, bets: list,
         return
 
     print(f"  {'✅ 的中' if hit else '❌ 外れ'}  {combo}  払戻¥{payout:,}  ({grade})")
-
-    # Discord通知は☆☆☆（勝負レース）のみ
-    if grade == '☆☆☆':
-        send_race_result(
-            venue=venue, race_no=race_no, race_name=race_name,
-            result_combo=combo, payout=int(payout) if hit else 0,
-            hit=hit, profit=profit,
-        )
-        print(f"  📢 Discord結果通知送信")
 
 
 # ── 1レース処理 ───────────────────────────────────────────────────────────────
