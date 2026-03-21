@@ -43,6 +43,7 @@ DB_OLD_PATH  = os.environ.get("DB_OLD_PATH",  "data/S級選手究極DB(1).xlsx")
 PRED_BEFORE_MIN  = 7    # 締切N分前に予想実行
 RESULT_AFTER_MIN = 15   # 締切N分後に結果確認（☆☆☆のみ）
 MAX_RESULT_RETRY = 5    # 結果取得リトライ回数
+NEST_SIGMA       = 0.90 # Nested Logit ライン相関パラメータ (1.0=PLと同等)
 
 STRATEGY_CFG = dict(
     skip_chaos=True, min_top_ev=60,
@@ -314,44 +315,93 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
     max_e    = ranked[0][1]['ev']
     raw_s    = {n: np.exp(player_scores[n]['ev'] - max_e) for n in all_nums}
 
-    def pl(f, s, t):
-        d1 = sum(raw_s[n] for n in all_nums)
-        d2 = sum(raw_s[n] for n in all_nums if n != f)
-        d3 = sum(raw_s[n] for n in all_nums if n not in (f, s))
-        return 0.0 if 0 in (d1, d2, d3) else (raw_s[f]/d1)*(raw_s[s]/d2)*(raw_s[t]/d3)
+    # ── Nested Logit 確率計算（ラインをネスト構造として扱う） ──────────
+    sigma = NEST_SIGMA
 
-    axis_num = next((n for n, d in ranked if d['is_monster']), ranked[0][0])
-    others   = [n for n, _ in ranked if n != axis_num]
-    ev_bets  = sorted(
-        [(pl(axis_num, s, t) * odds_dict.get(f"{axis_num}-{s}-{t}", 0),
-          f"{axis_num}-{s}-{t}",
-          pl(axis_num, s, t),
-          odds_dict.get(f"{axis_num}-{s}-{t}", 0))
-         for s in others for t in others if s != t and f"{axis_num}-{s}-{t}" in odds_dict],
-        key=lambda x: x[2], reverse=True
-    )
+    # ライングループ構築用のヘルパ
+    def _build_nests(members):
+        nests = {}
+        for n in members:
+            ln = num_to_line.get(n, -n)  # ラインなしは個別ネスト
+            if ln not in nests:
+                nests[ln] = []
+            nests[ln].append(n)
+        return nests
 
-    bets = [c for _, c, _, _ in ev_bets[:STRATEGY_CFG['top_n_prob_bets']]]
-    if not bets:
+    def nested_marginal(target, remaining):
+        """Nested Logit: remaining集合からtargetが選ばれる確率"""
+        if not remaining:
+            return 0.0
+        nests = _build_nests(remaining)
+        IV = {}
+        for ln, members in nests.items():
+            inner = sum(raw_s[m] ** (1.0 / sigma) for m in members)
+            IV[ln] = inner ** sigma if inner > 0 else 0.0
+        total_IV = sum(IV.values())
+        if total_IV == 0:
+            return 0.0
+        t_ln = num_to_line.get(target, -target)
+        nest_p   = IV[t_ln] / total_IV
+        inner_d  = sum(raw_s[m] ** (1.0 / sigma) for m in nests[t_ln])
+        if inner_d == 0:
+            return 0.0
+        within_p = (raw_s[target] ** (1.0 / sigma)) / inner_d
+        return nest_p * within_p
+
+    def nested_trifecta(f, s, t):
+        """3連単確率 P(1着=f, 2着=s, 3着=t) を逐次除去で計算"""
+        p1 = nested_marginal(f, all_nums)
+        if p1 == 0:
+            return 0.0
+        p2 = nested_marginal(s, [n for n in all_nums if n != f])
+        if p2 == 0:
+            return 0.0
+        p3 = nested_marginal(t, [n for n in all_nums if n not in (f, s)])
+        return p1 * p2 * p3
+
+    # ── マルチ軸: 全選手を1着候補に展開し、確率Top N 点を選択 ──────────
+    all_trifectas = []
+    for f in all_nums:
+        for s in all_nums:
+            if s == f:
+                continue
+            for t in all_nums:
+                if t == f or t == s:
+                    continue
+                combo = f"{f}-{s}-{t}"
+                if combo not in odds_dict:
+                    continue
+                p_trio = nested_trifecta(f, s, t)
+                odds_v = odds_dict[combo]
+                ev_val = p_trio * odds_v
+                all_trifectas.append((ev_val, combo, p_trio, odds_v))
+
+    selected = sorted(all_trifectas, key=lambda x: x[2], reverse=True)[:STRATEGY_CFG['top_n_prob_bets']]
+    bets_combos = [c for _, c, _, _ in selected]
+    if not bets_combos:
         return None
 
-    ev_lkup = {c: ev for ev, c, p, o in sorted(ev_bets, key=lambda x: x[0], reverse=True)}
-    bet_ev  = [(c, ev_lkup.get(c, 0.0)) for c in bets]
+    ev_lkup = {c: ev for ev, c, p, o in all_trifectas}
+    bet_ev  = [(c, ev_lkup.get(c, 0.0)) for c in bets_combos]
     ev_vals = np.array([max(e, 0.0) for _, e in bet_ev])
-    total_p = 100 * len(bets)
+    total_p = 100 * len(bets_combos)
     if ev_vals.sum() == 0:
-        alloc = [100] * len(bets)
+        alloc = [100] * len(bets_combos)
     else:
         a    = (ev_vals / ev_vals.sum()) * total_p
         a100 = (a // 100).astype(int) * 100
         a100[int(np.argmax(ev_vals))] += (int(total_p - a100.sum()) // 100) * 100
         alloc = [max(int(x), 100) for x in a100]
 
+    # 最頻1着選手を「軸」として記録（Discord表示用）
+    first_nums = [int(c.split('-')[0]) for c in bets_combos]
+    axis_num   = max(set(first_nums), key=first_nums.count)
+
     return {
         'top_ev':  top_ev,
         'axis_ev': player_scores[axis_num]['ev'],
         'axis':    f"車番{axis_num} {player_scores[axis_num]['name']}",
-        'bets':    list(zip(bets, alloc)),
+        'bets':    list(zip(bets_combos, alloc)),
         'total':   sum(alloc),
         'grade':   grade,
     }
