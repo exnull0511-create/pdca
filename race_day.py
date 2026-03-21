@@ -23,7 +23,7 @@ import sys
 import time
 import pandas as pd
 import numpy as np
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from pathlib import Path
 from bs4 import BeautifulSoup
 
@@ -35,6 +35,17 @@ from bet_logger import (
     _load_all, _save_all,
 )
 from send_discord import send_prediction, send_daily_summary
+
+# ── JST タイムゾーン ──────────────────────────────────────────────────────────
+JST = timezone(timedelta(hours=9))
+
+def now_jst() -> datetime:
+    """JST固定の現在時刻（naive datetime）を返す。PC/サーバのTZ設定に依存しない。"""
+    return datetime.now(JST).replace(tzinfo=None)
+
+def today_jst() -> date:
+    """JST固定の今日の日付を返す。"""
+    return now_jst().date()
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
 DB_SLIM_PATH = os.environ.get("DB_SLIM_PATH", "data/S級DB_slim.xlsx")
@@ -457,7 +468,7 @@ def check_result_later(scraper: KdreamsScraper, race: dict, bets: list,
     """deadline + RESULT_AFTER_MIN 分後に結果を取得してログ更新。☆☆☆のみDiscord投稿。"""
     deadline = race['_deadline']
     wait_until = deadline + timedelta(minutes=RESULT_AFTER_MIN)
-    now = datetime.now()
+    now = now_jst()
     if wait_until > now and not dry_run:
         wait_sec = (wait_until - now).total_seconds()
         print(f"  ⏱️  結果確認まで {wait_sec/60:.1f}分待機...")
@@ -518,12 +529,13 @@ def process_race(race: dict, scraper: KdreamsScraper,
         return
 
     # ── 締切判定 ─────────────────────────────────────────────────────────────
-    now = datetime.now()
+    now = now_jst()
     if now > deadline:
         print(f"  ⏭️  {venue} {race_no}R → 締切済みスキップ ({deadline.strftime('%H:%M')})")
         return
 
     # ── 予想時刻まで sleep ─────────────────────────────────────────────────────
+    now = now_jst()  # 再取得（sleep後の遷移用）
     if pred_time > now:
         wait_sec = (pred_time - now).total_seconds()
         print(f"\n⏰ {venue} {race_no}R [{race_name}]  締切{deadline.strftime('%H:%M')}"
@@ -622,7 +634,7 @@ def main():
     args = parser.parse_args()
 
     target_date = (datetime.strptime(args.date, '%Y-%m-%d').date()
-                   if args.date else date.today())
+                   if args.date else today_jst())
     today_dt    = datetime.combine(target_date, datetime.min.time())
     dry_run     = args.dry_run
 
