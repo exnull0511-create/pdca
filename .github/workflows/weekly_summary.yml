@@ -2,7 +2,8 @@ name: 競輪予想 収支レポート
 
 on:
   schedule:
-    - cron: '30 12 * * *'   # 日次: 毎日 21:30 JST (UTC 12:30)
+    # 日次は race_day.py evening 終了時に送信するため無効化
+    # - cron: '30 12 * * *'   # 日次: 毎日 21:30 JST (UTC 12:30)
     - cron: '0 0 * * 1'     # 週次: 毎週月曜 09:00 JST (UTC 0:00)
     - cron: '0 0 1 * *'     # 月次: 毎月1日 09:00 JST (UTC 0:00)
   workflow_dispatch:

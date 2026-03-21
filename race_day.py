@@ -603,7 +603,7 @@ def process_race(race: dict, scraper: KdreamsScraper,
             for lno in sorted(set(num_to_line.values()))
         ]
         deadline_str = deadline.strftime('%H:%M')
-        mins_left    = max(0, int((deadline - datetime.now()).total_seconds() / 60))
+        mins_left    = max(0, int((deadline - now_jst()).total_seconds() / 60))
 
         if not dry_run:
             send_prediction(
