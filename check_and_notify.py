@@ -443,6 +443,10 @@ def main():
         )
 
         if result:
+            if result['grade'] != '☆☆☆':
+                print(f"  ⏭️  スキップ（グレード {result['grade']} のため通知・ベット対象外）")
+                continue
+
             log_bet(
                 race_id=race_id, venue=venue, race_no=race_no,
                 race_name=r.get('race_name', 'S級'),
