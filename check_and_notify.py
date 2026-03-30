@@ -373,10 +373,10 @@ def main():
         return
 
     # ── 残レースチェック: 全S級レース終了後は終了 ───────────────────────────
-    # 日次サマリーは weekly_summary.yml（毎日 21:00 JST）に委譲
+    # 日次サマリーは race_day.py evening セッション終了時に送信
     remaining = [r for r in races if r.get('deadline_time') and r['deadline_time'] > now]
     if not remaining:
-        print("✅ 本日のS級レースは全て終了。（日次サマリーは 21:00 JST の weekly_summary.yml から送信）")
+        print("✅ 本日のS級レースは全て終了。（日次サマリーは race_day.py evening から送信）")
         return
 
     # bets_logで重複チェックするのでcronが何度叩いても安全
