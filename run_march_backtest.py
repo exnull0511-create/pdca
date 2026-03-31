@@ -32,9 +32,29 @@ DB_SLIM  = "data/S級DB_slim.xlsx"
 
 # ── ストラテジー設定 ──────────────────────────────────────────────────────────
 STRATEGY_CONFIGS = {
-    # 本番採用設定（check_and_notify.py と同一: skip_chaos=True / min_ev=60）
+    # ★ 本番完全再現（check_and_notify.py と同一: フィルタなし＝全レースで予想実行）
+    "PRODUCTION": {
+        "name":             "[本番再現] フィルタなし / 全レース予想 / EV傾斜14点",
+        "skip_chaos":       False,
+        "min_top_ev":       0,
+        "require_monster":  False,
+        "skip_low_bank":    False,
+        "top_n_prob_bets":  14,
+        "bet_base":         100,
+    },
+    # ★ 本番再現＋☆☆☆のみ（勝負レースのみ集計）
+    "PROD_3STAR": {
+        "name":             "[本番☆☆☆のみ] skip_chaos=True / min_top_ev=60 / 低bank除外",
+        "skip_chaos":       True,
+        "min_top_ev":       60,
+        "require_monster":  False,
+        "skip_low_bank":    True,
+        "top_n_prob_bets":  14,
+        "bet_base":         100,
+    },
+    # 旧CURRENT設定
     "CURRENT": {
-        "name":             "[本番] skip_chaos=True / min_top_ev=60 / EV傾斜14点",
+        "name":             "[旧設定] skip_chaos=True / min_top_ev=60 / EV傾斜14点",
         "skip_chaos":       True,
         "min_top_ev":       60,
         "require_monster":  False,
@@ -449,16 +469,21 @@ def run_backtest(strategy: str, use_bank_filter: bool):
 
 def main():
     parser = argparse.ArgumentParser(description="3月分バックテスト実行")
-    parser.add_argument("--strategy",       default="CURRENT",
+    parser.add_argument("--strategy",       default="PRODUCTION",
                         choices=list(STRATEGY_CONFIGS.keys()),
                         help="バックテスト戦略")
     parser.add_argument("--no-bank-filter", action="store_true",
                         help="バンクROIフィルタを無効化")
     parser.add_argument("--all-strategies", action="store_true",
                         help="全戦略を一括実行")
+    parser.add_argument("--production",     action="store_true",
+                        help="本番再現モード（PRODUCTION + PROD_3STAR）")
     args = parser.parse_args()
 
-    if args.all_strategies:
+    if args.production:
+        run_backtest("PRODUCTION", False)
+        run_backtest("PROD_3STAR", True)
+    elif args.all_strategies:
         for s in STRATEGY_CONFIGS:
             run_backtest(s, not args.no_bank_filter)
     else:
