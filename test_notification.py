@@ -89,9 +89,15 @@ def main():
             )
 
             if result:
-                print(f"\n  🎯 勝負判定あり！")
+                grade = result.get('grade', '☆')
+                print(f"\n  {'🎯' if grade == '☆☆☆' else '👀'} グレード: {grade}")
                 print(f"     軸: {result['axis']}  EV: {result['top_ev']:.1f}")
                 print(f"     買い目: {len(result['bets'])}点  合計: ¥{result['total']:,}")
+
+                # ☆☆☆（勝負レース）以外はDiscord送信しない
+                if grade != '☆☆☆':
+                    print(f"  ⏭️  ルック判定（{grade}）→ Discord送信スキップ")
+                    continue
 
                 # ライン情報を Discord 用に整形
                 lines_for_discord = [
@@ -109,6 +115,7 @@ def main():
                     mins_left=0,     # 終了済みなので0
                     lines=lines_for_discord,
                     result=result,
+                    grade=grade,
                 )
 
                 if ok:

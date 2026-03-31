@@ -34,7 +34,7 @@ from bet_logger import (
     log_bet, update_result, get_pending_races, get_daily_summary,
     _load_all, _save_all,
 )
-from send_discord import send_prediction, send_daily_summary
+from send_discord import send_prediction, send_race_result, send_daily_summary
 
 # ── JST タイムゾーン ──────────────────────────────────────────────────────────
 JST = timezone(timedelta(hours=9))
@@ -507,6 +507,14 @@ def check_result_later(scraper: KdreamsScraper, race: dict, bets: list,
     if dry_run:
         print(f"  [dry-run] 結果: {combo} {'✅的中' if hit else '❌外れ'} ({grade})")
         return
+
+    # ☆☆☆（勝負レース）のみ結果をDiscordに投稿
+    if grade == '☆☆☆':
+        send_race_result(
+            venue=venue, race_no=race_no, race_name=race_name,
+            result_combo=combo, payout=payout,
+            hit=hit, profit=profit,
+        )
 
     print(f"  {'✅ 的中' if hit else '❌ 外れ'}  {combo}  払戻¥{payout:,}  ({grade})")
 

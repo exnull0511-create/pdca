@@ -57,16 +57,17 @@ def send_prediction(
     grade: str = "☆☆☆",    # "☆☆☆"=勝負 / "☆"=ルック
 ) -> bool:
     """
-    買い推奨通知を有料チャンネルに送信する。
-
-    lines: [{'line': 1, 'bibs': [1, 5, 7]}, ...]
-    result: {'venue','race_no','top_ev','axis','bets':[('5-1-7',200),...],'total':int}
-    grade: '☆☆☆' → シアン(grade勝負) / '☆' → グレー(ルック)
+    ☆☆☆（勝負レース）の買い推奨通知を有料チャンネルに送信する。
+    ☆☆☆以外のgradeが渡された場合は送信しない。
     """
-    is_bet = (grade == "☆☆☆")
-    color  = COLOR_BET if is_bet else 0x95a5a6
-    icon   = "🎯" if is_bet else "👀"
-    label  = "勝負" if is_bet else "ルック"
+    # ☆☆☆（勝負レース）以外はDiscordに送信しない
+    if grade != "☆☆☆":
+        print(f"[Discord省略] グレード {grade} のため送信スキップ ({venue} {race_no}R)")
+        return False
+
+    color  = COLOR_BET
+    icon   = "🎯"
+    label  = "勝負"
     # ライン情報の整形
     line_text = ""
     for li in lines:
