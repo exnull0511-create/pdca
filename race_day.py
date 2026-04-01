@@ -699,6 +699,13 @@ def main():
     # ── 日次収支サマリー投稿（evening のみ） ──────────────────────────────────
     if args.session == 'evening':
         print("\n📊 日次収支サマリーを投稿中...")
+        # morningセッションや他ジョブが push した bets_log.csv を取り込む
+        try:
+            subprocess.run(["git", "pull", "--rebase", "origin", "main"],
+                           check=True, timeout=30, capture_output=True)
+            print("  🔄 git pull 完了（bets_log.csv 最新化）")
+        except Exception as e:
+            print(f"  ⚠️  git pull 失敗（ローカルのみで集計）: {e}")
         summary = get_daily_summary(grade='☆☆☆')
         print(f"  ☆☆☆: {summary['n_races']}R  的中{len(summary['hits'])}件  "
               f"収支{'+' if summary['profit']>=0 else ''}¥{summary['profit']:,}")
