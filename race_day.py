@@ -34,7 +34,7 @@ from bet_logger import (
     log_bet, update_result, get_pending_races, get_daily_summary,
     _load_all, _save_all,
 )
-from send_discord import send_prediction, send_race_result, send_daily_summary
+from send_discord import send_prediction, send_daily_summary
 
 # ── JST タイムゾーン ──────────────────────────────────────────────────────────
 JST = timezone(timedelta(hours=9))
@@ -508,14 +508,6 @@ def check_result_later(scraper: KdreamsScraper, race: dict, bets: list,
         print(f"  [dry-run] 結果: {combo} {'✅的中' if hit else '❌外れ'} ({grade})")
         return
 
-    # ☆☆☆（勝負レース）のみ結果をDiscordに投稿
-    if grade == '☆☆☆':
-        send_race_result(
-            venue=venue, race_no=race_no, race_name=race_name,
-            result_combo=combo, payout=payout,
-            hit=hit, profit=profit,
-        )
-
     print(f"  {'✅ 的中' if hit else '❌ 外れ'}  {combo}  払戻¥{payout:,}  ({grade})")
 
 
@@ -696,26 +688,23 @@ def main():
     else:
         print("\n（本セッションに対象レースなし）")
 
-    # ── 日次収支サマリー投稿（evening のみ） ──────────────────────────────────
-    if args.session == 'evening':
-        print("\n📊 日次収支サマリーを投稿中...")
-        # morningセッションや他ジョブが push した bets_log.csv を取り込む
-        try:
-            subprocess.run(["git", "pull", "--rebase", "origin", "main"],
-                           check=True, timeout=30, capture_output=True)
-            print("  🔄 git pull 完了（bets_log.csv 最新化）")
-        except Exception as e:
-            print(f"  ⚠️  git pull 失敗（ローカルのみで集計）: {e}")
-        summary = get_daily_summary(grade='☆☆☆')
-        print(f"  ☆☆☆: {summary['n_races']}R  的中{len(summary['hits'])}件  "
-              f"収支{'+' if summary['profit']>=0 else ''}¥{summary['profit']:,}")
-        if not dry_run:
-            send_daily_summary(summary)
-            print("  ✅ Discord投稿完了")
-        else:
-            print("  [dry-run] Discord投稿省略")
+    # ── 日次収支サマリー投稿（両セッション共通） ─────────────────────────────
+    print("\n📊 日次収支サマリーを投稿中...")
+    # 他セッションが push した bets_log.csv を取り込む
+    try:
+        subprocess.run(["git", "pull", "--rebase", "origin", "main"],
+                       check=True, timeout=30, capture_output=True)
+        print("  🔄 git pull 完了（bets_log.csv 最新化）")
+    except Exception as e:
+        print(f"  ⚠️  git pull 失敗（ローカルのみで集計）: {e}")
+    summary = get_daily_summary(grade='☆☆☆')
+    print(f"  ☆☆☆: {summary['n_races']}R  的中{len(summary['hits'])}件  "
+          f"収支{'+' if summary['profit']>=0 else ''}¥{summary['profit']:,}")
+    if not dry_run:
+        send_daily_summary(summary)
+        print("  ✅ Discord投稿完了")
     else:
-        print("\n（morningセッション — 日次サマリーは evening で投稿します）")
+        print("  [dry-run] Discord投稿省略")
 
     print(f"\n🏁 セッション '{args.session}' 完了")
 
