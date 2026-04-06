@@ -57,8 +57,8 @@ MAX_RESULT_RETRY = 5    # 結果取得リトライ回数
 NEST_SIGMA       = 0.90 # Nested Logit ライン相関パラメータ (1.0=PLと同等)
 
 STRATEGY_CFG = dict(
-    skip_chaos=True, min_top_ev=67,      # バックテスト最適値 (4-5R/日, ROI175%)
-    skip_low_bank=True, top_n_prob_bets=7,
+    skip_chaos=True, min_top_ev=67,      # バックテスト最適値 (ROI175%)
+    skip_low_bank=False, top_n_prob_bets=7,  # バンクフィルタなし+ガミ目カット
 )
 
 BANK_DICT = {
@@ -388,6 +388,11 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
                 all_trifectas.append((ev_val, combo, p_trio, odds_v))
 
     selected = sorted(all_trifectas, key=lambda x: x[2], reverse=True)[:STRATEGY_CFG['top_n_prob_bets']]
+
+    # ガミ目カット: 低オッズ買い目は的中してもガミるため除外 (ROI +10%改善)
+    MIN_ODDS = 10
+    selected = [(ev, c, p, o) for ev, c, p, o in selected if o >= MIN_ODDS]
+
     bets_combos = [c for _, c, _, _ in selected]
     if not bets_combos:
         return None
