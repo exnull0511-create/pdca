@@ -272,7 +272,7 @@ def send_race_result(
     return _post_webhook(WEBHOOK_PAID, payload)
 
 
-def send_daily_summary(summary: dict) -> bool:
+def send_daily_summary(summary: dict, session: str = '') -> bool:
     """
     日次収支サマリー（☆☆☆勝負レースのトータル）を迓む。
     bet_logger.get_daily_summary(grade='☆☆☆') の返り値を渡す。
@@ -303,7 +303,8 @@ def send_daily_summary(summary: dict) -> bool:
     detail_text = '\n'.join(detail_lines) if detail_lines else 'データなし'
 
     embed = {
-        'title': f'\U0001f3c6  {today}  ☆☆☆勝負レース  日次収支報告',
+        'title': f'\U0001f3c6  {today}  ☆☆☆勝負レース  日次収支報告'
+                + ({'morning': '（前半）', 'evening': '（後半）'}.get(session, '')),
         'color': color,
         'fields': [
             {

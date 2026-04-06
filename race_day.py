@@ -57,7 +57,7 @@ MAX_RESULT_RETRY = 5    # 結果取得リトライ回数
 NEST_SIGMA       = 0.90 # Nested Logit ライン相関パラメータ (1.0=PLと同等)
 
 STRATEGY_CFG = dict(
-    skip_chaos=True, min_top_ev=60,      # PROD_3STAR と同一
+    skip_chaos=True, min_top_ev=67,      # バックテスト最適値 (4-5R/日, ROI175%)
     skip_low_bank=True, top_n_prob_bets=7,
 )
 
@@ -392,17 +392,10 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
     if not bets_combos:
         return None
 
-    ev_lkup = {c: ev for ev, c, p, o in all_trifectas}
-    bet_ev  = [(c, ev_lkup.get(c, 0.0)) for c in bets_combos]
-    ev_vals = np.array([max(e, 0.0) for _, e in bet_ev])
-    total_p = 100 * len(bets_combos)
-    if ev_vals.sum() == 0:
-        alloc = [100] * len(bets_combos)
-    else:
-        a    = (ev_vals / ev_vals.sum()) * total_p
-        a100 = (a // 100).astype(int) * 100
-        a100[int(np.argmax(ev_vals))] += (int(total_p - a100.sum()) // 100) * 100
-        alloc = [max(int(x), 100) for x in a100]
+    # フラット配分: 低確率順位(Pos6-7)が的中の42%を占めるため
+    # EV比例配分よりフラット配分の方がROIが高い (118%→175%)
+    BET_UNIT = 100
+    alloc = [BET_UNIT] * len(bets_combos)
 
     # 最頻1着選手を「軸」として記録（Discord表示用）
     first_nums = [int(c.split('-')[0]) for c in bets_combos]
@@ -701,7 +694,7 @@ def main():
     print(f"  ☆☆☆: {summary['n_races']}R  的中{len(summary['hits'])}件  "
           f"収支{'+' if summary['profit']>=0 else ''}¥{summary['profit']:,}")
     if not dry_run:
-        send_daily_summary(summary)
+        send_daily_summary(summary, session=args.session)
         print("  ✅ Discord投稿完了")
     else:
         print("  [dry-run] Discord投稿省略")
