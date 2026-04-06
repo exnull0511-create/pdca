@@ -57,8 +57,8 @@ MAX_RESULT_RETRY = 5    # 結果取得リトライ回数
 NEST_SIGMA       = 0.90 # Nested Logit ライン相関パラメータ (1.0=PLと同等)
 
 STRATEGY_CFG = dict(
-    skip_chaos=True, min_top_ev=67,      # バックテスト最適値 (ROI175%)
-    skip_low_bank=False, top_n_prob_bets=7,  # バンクフィルタなし+ガミ目カット
+    skip_chaos=True, min_top_ev=67,       # バックテスト最適値 (ROI175%)
+    skip_low_bank=False, top_n_prob_bets=14,  # 2軸化(14点)+ガミ目カット
 )
 
 BANK_DICT = {
