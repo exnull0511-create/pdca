@@ -80,6 +80,46 @@ STRATEGY_CONFIGS = {
         "top_n_prob_bets":  14,
         "bet_base":         100,
     },
+    # ★ 現行最新ロジック (2026-04-07): 多軸NL+ガミカット+フラット配分
+    "CURRENT_V2": {
+        "name":             "[現行v2] 多軸NL / EV67 / 2軸14点 / ガミカット / フラット / バンクフィルタなし",
+        "skip_chaos":       True,
+        "min_top_ev":       67,
+        "require_monster":  False,
+        "skip_low_bank":    False,
+        "top_n_prob_bets":  14,
+        "bet_base":         100,
+    },
+    # カオスフィルタなし版
+    "CURRENT_V2_NOCHAOS": {
+        "name":             "[現行v2+カオス含む] 多軸NL / EV67 / 2軸14点 / ガミカット / フラット",
+        "skip_chaos":       False,
+        "min_top_ev":       67,
+        "require_monster":  False,
+        "skip_low_bank":    False,
+        "top_n_prob_bets":  14,
+        "bet_base":         100,
+    },
+    # 多軸NL + 7点精鋭
+    "V2_NL7": {
+        "name":             "[多軸NL7点] EV67 / 精鋭7点 / ガミカット / フラット",
+        "skip_chaos":       False,
+        "min_top_ev":       67,
+        "require_monster":  False,
+        "skip_low_bank":    False,
+        "top_n_prob_bets":  7,
+        "bet_base":         100,
+    },
+    # 多軸NL + 10点
+    "V2_NL10": {
+        "name":             "[多軸NL10点] EV67 / 10点 / ガミカット / フラット",
+        "skip_chaos":       False,
+        "min_top_ev":       67,
+        "require_monster":  False,
+        "skip_low_bank":    False,
+        "top_n_prob_bets":  10,
+        "bet_base":         100,
+    },
 }
 
 BANK_DICT = {
@@ -271,37 +311,70 @@ def analyze_race(race_id, venue, race_dt, race_info, odds_dict,
     max_e    = ranked[0][1]["ev"]
     raw_s    = {n: np.exp(player_scores[n]["ev"] - max_e) for n in all_nums}
 
-    def pl(f, s, t):
-        d1 = sum(raw_s[n] for n in all_nums)
-        d2 = sum(raw_s[n] for n in all_nums if n != f)
-        d3 = sum(raw_s[n] for n in all_nums if n not in (f, s))
-        return 0.0 if 0 in (d1, d2, d3) else (raw_s[f]/d1)*(raw_s[s]/d2)*(raw_s[t]/d3)
+    # ── Nested Logit 確率計算（race_day.py と同一） ──────────
+    sigma = 0.90
 
-    axis_num = next((n for n, d in ranked if d["is_monster"]), ranked[0][0])
-    others   = [n for n, _ in ranked if n != axis_num]
+    def _build_nests(members):
+        nests = {}
+        for n in members:
+            ln = num_to_line.get(n, -n)
+            if ln not in nests: nests[ln] = []
+            nests[ln].append(n)
+        return nests
 
-    ev_bets = sorted(
-        [(pl(axis_num, s, t) * odds_dict.get(f"{axis_num}-{s}-{t}", 0),
-          f"{axis_num}-{s}-{t}", pl(axis_num, s, t), odds_dict.get(f"{axis_num}-{s}-{t}", 0))
-         for s in others for t in others if s != t and f"{axis_num}-{s}-{t}" in odds_dict],
-        key=lambda x: x[2], reverse=True
-    )
-    bets = [c for _, c, _, _ in ev_bets[:cfg["top_n_prob_bets"]]]
+    def nested_marginal(target, remaining):
+        if not remaining: return 0.0
+        nests = _build_nests(remaining)
+        IV = {}
+        for ln, members in nests.items():
+            inner = sum(raw_s[m] ** (1.0 / sigma) for m in members)
+            IV[ln] = inner ** sigma if inner > 0 else 0.0
+        total_IV = sum(IV.values())
+        if total_IV == 0: return 0.0
+        t_ln = num_to_line.get(target, -target)
+        nest_p  = IV[t_ln] / total_IV
+        inner_d = sum(raw_s[m] ** (1.0 / sigma) for m in nests[t_ln])
+        if inner_d == 0: return 0.0
+        return nest_p * (raw_s[target] ** (1.0 / sigma)) / inner_d
+
+    def nested_trifecta(f, s, t):
+        p1 = nested_marginal(f, all_nums)
+        if p1 == 0: return 0.0
+        p2 = nested_marginal(s, [n for n in all_nums if n != f])
+        if p2 == 0: return 0.0
+        p3 = nested_marginal(t, [n for n in all_nums if n not in (f, s)])
+        return p1 * p2 * p3
+
+    # ── マルチ軸: 全選手を1着候補に展開 ──────────
+    all_trifectas = []
+    for f in all_nums:
+        for s in all_nums:
+            if s == f: continue
+            for t in all_nums:
+                if t == f or t == s: continue
+                combo = f"{f}-{s}-{t}"
+                if combo not in odds_dict: continue
+                p_trio = nested_trifecta(f, s, t)
+                odds_v = odds_dict[combo]
+                all_trifectas.append((p_trio * odds_v, combo, p_trio, odds_v))
+
+    selected = sorted(all_trifectas, key=lambda x: x[2], reverse=True)[:cfg["top_n_prob_bets"]]
+
+    # ガミ目カット: odds < MIN_ODDS を除外
+    MIN_ODDS = 10
+    selected = [(ev, c, p, o) for ev, c, p, o in selected if o >= MIN_ODDS]
+
+    bets = [c for _, c, _, _ in selected]
     if not bets:
         return None, "買い目なし"
 
-    ev_lookup = {c: ev for ev, c, p, o in sorted(ev_bets, key=lambda x: x[0], reverse=True)}
-    bet_ev    = [(c, ev_lookup.get(c, 0.0)) for c in bets]
-    ev_vals   = np.array([max(e, 0.0) for _, e in bet_ev])
-    bet_base  = cfg["bet_base"]
-    total_p   = bet_base * len(bets)
-    if ev_vals.sum() == 0:
-        alloc = [bet_base] * len(bets)
-    else:
-        a     = (ev_vals / ev_vals.sum()) * total_p
-        a100  = (a // 100).astype(int) * 100
-        a100[int(np.argmax(ev_vals))] += (int(total_p - a100.sum()) // 100) * 100
-        alloc = [max(int(x), 100) for x in a100]
+    # フラット配分
+    bet_base = cfg["bet_base"]
+    alloc = [bet_base] * len(bets)
+
+    # 最頻1着 = 軸
+    first_nums = [int(c.split('-')[0]) for c in bets]
+    axis_num   = max(set(first_nums), key=first_nums.count)
 
     return {
         "axis":       axis_num,
@@ -446,7 +519,7 @@ def run_backtest(strategy: str, use_bank_filter: bool,
                 "payout_100": payout,
                 "hit":       hit,
                 "actual":    actual,
-                "bets":      ",".join(bet_combos[:7]),
+                "bets":      ",".join(bet_combos),
             })
 
     # ── サマリー ──────────────────────────────────────────────────────────────
