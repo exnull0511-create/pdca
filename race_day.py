@@ -341,10 +341,10 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
                     + ps['nb'] * 2.0 + ps['sp'] * 0.5 + ps['posb']
                     + (3.0 if ps['is_monster'] else 0)
                     - (2.0 if ps['is_unreliable'] else 0)
-                    # 新特徴量 (CV検証済み)
+                    # 新特徴量 (アブレーション検証済み)
                     + ps['form_trend'] * 1.0       # 調子
-                    + ps['bantsuke_edge'] * 2.0    # 番手有利度
                     + ps['bank_style_fit'] * 2.0   # バンク×戦法
+                    # bantsuke_edge は検証ROIを悪化させるため除外
                     )
 
     ranked = sorted(player_scores.items(), key=lambda x: x[1]['ev'], reverse=True)

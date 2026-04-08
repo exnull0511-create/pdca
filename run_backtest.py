@@ -80,14 +80,14 @@ STRATEGY_CONFIGS = {
         "top_n_prob_bets":  14,
         "bet_base":         100,
     },
-    # ★ 現行最新ロジック (2026-04-07): 多軸NL+ガミカット+フラット配分
+    # ★ 現行最新ロジック (2026-04-07): PL単軸+新特徴量+ガミカット+フラット
     "CURRENT_V2": {
-        "name":             "[現行v2] 多軸NL / EV67 / 2軸14点 / ガミカット / フラット / バンクフィルタなし",
+        "name":             "[現行v2] PL単軸 / EV67 / 7点 / 新特徴量 / ガミカット / フラット",
         "skip_chaos":       True,
         "min_top_ev":       67,
         "require_monster":  False,
         "skip_low_bank":    False,
-        "top_n_prob_bets":  14,
+        "top_n_prob_bets":  7,
         "bet_base":         100,
     },
     # カオスフィルタなし版
@@ -255,6 +255,7 @@ def analyze_race(race_id, venue, race_dt, race_info, odds_dict,
             hist = past_all[past_all["選手名_norm"] == nm] if not past_all.empty else pd.DataFrame()
 
         ip = ep = 4.0; dp = bp_v = 3.0; nb = sp = 2.0; is_m = is_u = False
+        form_trend = 0.0
         if not hist.empty:
             RECENT_W = 3.0
             sd = sorted(hist["開催日"].dropna().unique(), reverse=True)
@@ -282,16 +283,56 @@ def analyze_race(race_id, venue, race_dt, race_info, odds_dict,
                 cmt = " ".join(hist.get("解析コメント", pd.Series([""])).astype(str))
                 is_m = any(k in cmt for k in ["脚余し", "鬼脚", "別次元", "圧倒"])
                 is_u = any(k in cmt for k in ["共倒れ", "位置取り失敗", "不発", "失速"])
+            # 調子: 直近2開催IP vs 全期間IP
+            if len(sd) >= 3:
+                recent_ip = pd.to_numeric(
+                    hist[hist["開催日"].isin(rd)]["IP"], errors="coerce").mean()
+                all_ip = pd.to_numeric(hist["IP"], errors="coerce").mean()
+                if not np.isnan(recent_ip) and not np.isnan(all_ip):
+                    form_trend = recent_ip - all_ip
 
         lno   = num_to_line.get(num, 0)
         lbs   = line_map.get(lno, [])
         pos   = lbs.index(num) + 1 if num in lbs else 1
         pos_b = 0.5 if pos == 1 else -0.3 * (pos - 1)
 
-        ev = (base * 0.4 + ip * 1.5 + ep * 1.2 + dp * bp["makuri"] + bp_v * bp["sashi"]
-              + nb * 2.0 + sp * 0.5 + pos_b + (3.0 if is_m else 0) - (2.0 if is_u else 0))
-        player_scores[num] = {"name": str(row.get("選手名", "")), "ev": ev,
-                               "ip": ip, "is_monster": is_m, "pos_in_line": pos}
+        player_scores[num] = {
+            "name": str(row.get("選手名", "")), "ip": ip, "ep": ep,
+            "dp": dp, "bp_v": bp_v, "nb": nb, "sp": sp,
+            "base": base, "pos_b": pos_b,
+            "is_monster": is_m, "is_unreliable": is_u,
+            "form_trend": form_trend, "pos_in_line": pos,
+            "line": num_to_line.get(num, 0),
+        }
+
+    # ── ライン構成の特徴量 ──────────────────────────────────────────
+    line_groups = {}
+    for num, ps in player_scores.items():
+        ln = ps["line"]
+        if ln not in line_groups:
+            line_groups[ln] = []
+        line_groups[ln].append(ps)
+
+    for num, ps in player_scores.items():
+        lg = line_groups[ps["line"]]
+        leader = [p for p in lg if p["pos_in_line"] == 1]
+        if ps["pos_in_line"] == 2 and leader:
+            ps["bantsuke_edge"] = leader[0]["ip"] - 4.0
+        else:
+            ps["bantsuke_edge"] = 0.0
+        ps["bank_style_fit"] = ((bp["sashi"] - 1.0) * ps["ep"]
+                                + (bp["makuri"] - 1.0) * ps["ip"])
+
+    # ── EV スコア算出（新特徴量込み） ─────────────────────────────────
+    for num, ps in player_scores.items():
+        ps["ev"] = (ps["base"] * 0.4
+                    + ps["ip"] * 1.5 + ps["ep"] * 1.2
+                    + ps["dp"] * bp["makuri"] + ps["bp_v"] * bp["sashi"]
+                    + ps["nb"] * 2.0 + ps["sp"] * 0.5 + ps["pos_b"]
+                    + (3.0 if ps["is_monster"] else 0)
+                    - (2.0 if ps["is_unreliable"] else 0)
+                    + ps["form_trend"] * 1.0
+                    + ps["bank_style_fit"] * 2.0)
 
     ranked = sorted(player_scores.items(), key=lambda x: x[1]["ev"], reverse=True)
     if len(ranked) < 3:
@@ -311,70 +352,36 @@ def analyze_race(race_id, venue, race_dt, race_info, odds_dict,
     max_e    = ranked[0][1]["ev"]
     raw_s    = {n: np.exp(player_scores[n]["ev"] - max_e) for n in all_nums}
 
-    # ── Nested Logit 確率計算（race_day.py と同一） ──────────
-    sigma = 0.90
+    # ── PL単軸: 軸(鬼脚 or EV1位)を1着固定 ──────────
+    def pl_prob(f, s, t):
+        d1 = sum(raw_s[n] for n in all_nums)
+        d2 = sum(raw_s[n] for n in all_nums if n != f)
+        d3 = sum(raw_s[n] for n in all_nums if n not in (f, s))
+        return 0.0 if 0 in (d1, d2, d3) else (raw_s[f]/d1)*(raw_s[s]/d2)*(raw_s[t]/d3)
 
-    def _build_nests(members):
-        nests = {}
-        for n in members:
-            ln = num_to_line.get(n, -n)
-            if ln not in nests: nests[ln] = []
-            nests[ln].append(n)
-        return nests
+    axis_num = next((n for n, d in ranked if d["is_monster"]), ranked[0][0])
+    others   = [n for n in all_nums if n != axis_num]
 
-    def nested_marginal(target, remaining):
-        if not remaining: return 0.0
-        nests = _build_nests(remaining)
-        IV = {}
-        for ln, members in nests.items():
-            inner = sum(raw_s[m] ** (1.0 / sigma) for m in members)
-            IV[ln] = inner ** sigma if inner > 0 else 0.0
-        total_IV = sum(IV.values())
-        if total_IV == 0: return 0.0
-        t_ln = num_to_line.get(target, -target)
-        nest_p  = IV[t_ln] / total_IV
-        inner_d = sum(raw_s[m] ** (1.0 / sigma) for m in nests[t_ln])
-        if inner_d == 0: return 0.0
-        return nest_p * (raw_s[target] ** (1.0 / sigma)) / inner_d
-
-    def nested_trifecta(f, s, t):
-        p1 = nested_marginal(f, all_nums)
-        if p1 == 0: return 0.0
-        p2 = nested_marginal(s, [n for n in all_nums if n != f])
-        if p2 == 0: return 0.0
-        p3 = nested_marginal(t, [n for n in all_nums if n not in (f, s)])
-        return p1 * p2 * p3
-
-    # ── マルチ軸: 全選手を1着候補に展開 ──────────
-    all_trifectas = []
-    for f in all_nums:
-        for s in all_nums:
-            if s == f: continue
-            for t in all_nums:
-                if t == f or t == s: continue
-                combo = f"{f}-{s}-{t}"
-                if combo not in odds_dict: continue
-                p_trio = nested_trifecta(f, s, t)
-                odds_v = odds_dict[combo]
-                all_trifectas.append((p_trio * odds_v, combo, p_trio, odds_v))
-
-    selected = sorted(all_trifectas, key=lambda x: x[2], reverse=True)[:cfg["top_n_prob_bets"]]
-
-    # ガミ目カット: odds < MIN_ODDS を除外
     MIN_ODDS = 10
-    selected = [(ev, c, p, o) for ev, c, p, o in selected if o >= MIN_ODDS]
+    candidates = []
+    for sn in others:
+        for tn in others:
+            if sn == tn: continue
+            combo = f"{axis_num}-{sn}-{tn}"
+            if combo not in odds_dict: continue
+            odds_v = odds_dict[combo]
+            if odds_v < MIN_ODDS: continue
+            p = pl_prob(axis_num, sn, tn)
+            candidates.append((p, combo, odds_v))
 
-    bets = [c for _, c, _, _ in selected]
+    selected = sorted(candidates, key=lambda x: x[0], reverse=True)[:cfg["top_n_prob_bets"]]
+    bets = [c for _, c, _ in selected]
     if not bets:
         return None, "買い目なし"
 
     # フラット配分
     bet_base = cfg["bet_base"]
     alloc = [bet_base] * len(bets)
-
-    # 最頻1着 = 軸
-    first_nums = [int(c.split('-')[0]) for c in bets]
-    axis_num   = max(set(first_nums), key=first_nums.count)
 
     return {
         "axis":       axis_num,
