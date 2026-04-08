@@ -58,7 +58,18 @@ MAX_RESULT_RETRY = 5    # 結果取得リトライ回数
 
 STRATEGY_CFG = dict(
     skip_chaos=True, min_top_ev=67,       # バックテスト最適値
-    skip_low_bank=False, top_n_prob_bets=7,   # PL単軸7点+ガミカット+新特徴量
+    skip_low_bank=False, top_n_prob_bets=10,  # ハイブリッド: PL候補→シミュフィルタ(閾値3)
+)
+
+# ── 展開シミュレーション設定 ─────────────────────────────────────────────────
+SIM_N        = 300   # モンテカルロ回数
+SIM_THRESH   = 3     # シミュでN回以上出現した買い目のみ通過
+SIM_PARAMS   = dict(
+    fat_front=0.6, fat_rear=0.5,    # 消耗度(大)
+    w_base=0.3, w_fatigue=2.0,
+    w_dp_mid=1.5, ep_thresh=4.5, chigire_rate=0.3, chigire_penalty=5.0,
+    w_bp_front=0.8, w_monster=2.0, w_nb=1.5, w_fat_straight=1.0,
+    noise=2.0,
 )
 
 BANK_DICT = {
@@ -237,6 +248,73 @@ def get_race_info(scraper: KdreamsScraper, race_url: str):
 
 
 # ── 予想コア（check_and_notify.py と同一ロジック） ──────────────────────────
+import random as _random
+_sim_rng = _random.Random(42)
+
+def _simulate_race_once(player_scores, line_info, bp, rng, params):
+    """1回の展開シミュレーション。着順リストを返す。"""
+    if len(line_info) < 2:
+        return [n for n, _ in sorted(player_scores.items(),
+                                      key=lambda x: x[1]['ev'], reverse=True)]
+    front = line_info[0]; rear = line_info[-1]
+    ip_diff = front['leader_ip'] - rear['leader_ip']
+    size_adv = front['size'] - rear['size']
+    style_b = 1.0 if front['leader_style'] == '逃' else 0.0
+    tup_score = ip_diff * 0.3 + size_adv * 0.2 + style_b * 0.3
+    tuppari = rng.random() < 1.0 / (1.0 + np.exp(-tup_score))
+
+    if tuppari:
+        intensity = max(0, 3.0 - abs(ip_diff))
+        fl_fat = intensity * params['fat_front']
+        rl_fat = intensity * params['fat_rear']
+    else:
+        fl_fat = 0.1; rl_fat = 0.2
+
+    c4 = {}
+    for num, p in player_scores.items():
+        sc = p.get('base', 80) * params['w_base']
+        li = next((l for l in line_info if num in l['members']), None)
+        if not li:
+            c4[num] = sc; continue
+        is_f = (li == front); is_r = (li == rear); is_mid = not is_f and not is_r
+        pos = p.get('pos_in_line', 1)
+        if pos == 1:
+            if is_f:
+                sc += p['ip'] * (1.5 if tuppari else 0.8)
+                if tuppari: sc -= fl_fat * params['w_fatigue']
+                else: sc += p.get('dp', 3) * 0.5
+            elif is_r:
+                sc += p['ip'] * (1.2 if tuppari else 1.8)
+                if tuppari: sc -= rl_fat * params['w_fatigue']
+            elif is_mid:
+                sc += p.get('dp', 3) * params['w_dp_mid'] * bp['makuri']
+        elif pos == 2:
+            if is_r and not tuppari:
+                ep = p.get('ep', 4)
+                if ep < params['ep_thresh'] and rng.random() < (params['ep_thresh'] - ep) * params['chigire_rate']:
+                    sc -= params['chigire_penalty']
+                sc += ep * 1.2
+            elif is_f:
+                sc += p.get('bp_v', 3) * bp['sashi'] * params['w_bp_front'] + p.get('ep', 4) * 0.8
+            else:
+                sc += p.get('ep', 4) * 1.0 + p.get('dp', 3) * 0.5
+        else:
+            sc += p.get('ep', 4) * 0.5
+        if p.get('is_monster'): sc += params['w_monster']
+        c4[num] = sc
+
+    final = {}
+    for num, p in player_scores.items():
+        f = c4.get(num, 0) + p.get('nb', 2) * params['w_nb']
+        li = next((l for l in line_info if num in l['members']), None)
+        if li and p.get('pos_in_line', 1) == 1:
+            if li == front: f -= fl_fat * params['w_fat_straight']
+            elif li == rear: f -= rl_fat * params['w_fat_straight']
+        f += rng.gauss(0, params['noise'])
+        final[num] = f
+    return [n for n, _ in sorted(final.items(), key=lambda x: x[1], reverse=True)]
+
+
 def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
                    odds_dict, db_all, db_slim, nobi_col, today_dt):
     bp       = BANK_DICT.get(venue, {'roi_tier': 'mid', 'sashi': 1.0, 'makuri': 1.0})
@@ -391,8 +469,47 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
             p = pl_prob(axis_num, s, t)
             candidates.append((p, combo, odds_v))
 
-    selected = sorted(candidates, key=lambda x: x[0], reverse=True)[:STRATEGY_CFG['top_n_prob_bets']]
-    bets_combos = [c for _, c, _ in selected]
+    pl_ranked = sorted(candidates, key=lambda x: x[0], reverse=True)
+
+    # ── 展開シミュレーションフィルタ ──────────────────────────────────────
+    # ライン構成情報を構築
+    _line_groups = {}
+    for num, ps in player_scores.items():
+        ln = ps.get('line', 0)
+        if ln not in _line_groups:
+            _line_groups[ln] = []
+        _line_groups[ln].append(num)
+
+    _line_info = []
+    for ln in sorted(_line_groups.keys()):
+        members = _line_groups[ln]
+        if not members:
+            continue
+        leader_num = members[0]
+        lp = player_scores[leader_num]
+        _line_info.append({
+            'lno': ln, 'members': members, 'size': len(members),
+            'leader': leader_num, 'leader_ip': lp['ip'],
+            'leader_dp': lp.get('dp', 3),
+            'leader_style': '逃' if lp.get('sp', 2) >= 3.5 else '',
+        })
+
+    # モンテカルロで3連単の出現回数を集計
+    from collections import Counter as _Counter
+    tri_counts = _Counter()
+    for _ in range(SIM_N):
+        ranking = _simulate_race_once(player_scores, _line_info, bp, _sim_rng, SIM_PARAMS)
+        if len(ranking) >= 3:
+            tri_counts[f"{ranking[0]}-{ranking[1]}-{ranking[2]}"] += 1
+
+    # PL確率順にフィルタ: シミュでSIM_THRESH回以上出現した買い目のみ通過
+    bets_combos = []
+    for _, combo, _ in pl_ranked:
+        if tri_counts.get(combo, 0) >= SIM_THRESH:
+            bets_combos.append(combo)
+        if len(bets_combos) >= STRATEGY_CFG['top_n_prob_bets']:
+            break
+
     if not bets_combos:
         return None
 
