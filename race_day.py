@@ -58,12 +58,12 @@ MAX_RESULT_RETRY = 5    # 結果取得リトライ回数
 
 STRATEGY_CFG = dict(
     skip_chaos=True, min_top_ev=67,       # バックテスト最適値
-    skip_low_bank=False, top_n_prob_bets=10,  # ハイブリッド: PL候補→シミュフィルタ(閾値3)
+    skip_low_bank=False, top_n_prob_bets=10,  # ハイブリッド: PL候補→シミュフィルタ(閾値5)
 )
 
 # ── 展開シミュレーション設定 ─────────────────────────────────────────────────
-SIM_N        = 300   # モンテカルロ回数
-SIM_THRESH   = 3     # シミュでN回以上出現した買い目のみ通過
+SIM_N        = 500   # モンテカルロ回数 (閾値5に対応するため増量)
+SIM_THRESH   = 5     # シミュでN回以上出現した買い目のみ通過 (検証ROI 127.7%)
 SIM_PARAMS   = dict(
     fat_front=0.6, fat_rear=0.5,    # 消耗度(大)
     w_base=0.3, w_fatigue=2.0,
