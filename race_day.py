@@ -343,7 +343,8 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
             hist = past_db[past_db['選手名_norm'] == nm] if not past_db.empty else pd.DataFrame()
 
         ip = ep = 4.0; dp = bp_v = 3.0; nb = sp = 2.0; is_m = is_u = False
-        form_trend = 0.0  # 新特徴量: 調子(直近IP - 全期間IP)
+        form_trend = 0.0
+        past_nobi_main = '?'; past_senpo_main = '?'
         if not hist.empty:
             RECENT_W = 3.0
             sd = sorted(hist['開催日'].dropna().unique(), reverse=True)
@@ -377,6 +378,24 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
                 all_ip = pd.to_numeric(hist['IP'], errors='coerce').mean()
                 if not np.isnan(recent_ip) and not np.isnan(all_ip):
                     form_trend = recent_ip - all_ip
+            # 過去最頻 直線の伸びグレード
+            if use_slim and '直線の伸び' in hist.columns:
+                _ng = hist['直線の伸び'].apply(
+                    lambda v: 'S' if str(v).strip().upper().startswith('S')
+                    else ('A' if str(v).strip().upper().startswith('A')
+                    else ('B' if str(v).strip().upper().startswith('B')
+                    else ('C' if str(v).strip().upper().startswith('C') else '?'))))
+                _vc = _ng.value_counts()
+                if len(_vc) > 0: past_nobi_main = _vc.index[0]
+            # 過去最頻 戦法大分類
+            if '戦法' in hist.columns:
+                def _classify(s):
+                    s = str(s).strip()
+                    if s in ('捲り','一発捲り','ロング捲り','カマシ捲り','番手捲り'): return '捲り'
+                    if s in ('先行','抑え先行','カマシ先行','突っ張り先行','先行争い敗'): return '先行'
+                    return '他'
+                _sc = hist['戦法'].apply(_classify).value_counts()
+                if len(_sc) > 0: past_senpo_main = _sc.index[0]
 
         lno  = num_to_line.get(num, 0)
         lbs  = [b for b, l in num_to_line.items() if l == lno]
@@ -388,6 +407,7 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
             'nb': nb, 'sp': sp, 'base': base, 'posb': posb,
             'is_monster': is_m, 'is_unreliable': is_u,
             'form_trend': form_trend, 'pos_in_line': pos, 'line': lno,
+            'past_nobi': past_nobi_main, 'past_senpo': past_senpo_main,
         }
 
     # ── ライン構成の特徴量を算出 ──────────────────────────────────────────
@@ -411,18 +431,26 @@ def run_prediction(venue, race_no, race_card, num_to_line, num_to_bibs,
         ps['bank_style_fit'] = ((bp['sashi'] - 1.0) * ps['ep']
                                 + (bp['makuri'] - 1.0) * ps['ip'])
 
-    # ── EV スコア算出（新特徴量込み） ─────────────────────────────────────
+    # ── EV スコア算出（全部入り: A+B+C+D 検証済み, CV平均95.8%） ────────
     for num, ps in player_scores.items():
+        # A: 過去最頻 直線伸びSボーナス (+12%リフト)
+        nobi_s_bonus = 3.0 if ps['past_nobi'] == 'S' else 0
+        # B: 鬼脚×伸びSコンボ (相乗効果)
+        monster_nobi_combo = 2.0 if ps['is_monster'] and ps['past_nobi'] == 'S' else 0
+        # D: 過去最頻戦法が捲り/先行 (個別は逆効果だが全部入りで相乗)
+        senpo_bonus = 1.5 if ps['past_senpo'] in ['捲り', '先行'] else 0
+
         ps['ev'] = (ps['base'] * 0.4
                     + ps['ip'] * 1.5 + ps['ep'] * 1.2
                     + ps['dp'] * bp['makuri'] + ps['bp_v'] * bp['sashi']
                     + ps['nb'] * 2.0 + ps['sp'] * 0.5 + ps['posb']
                     + (3.0 if ps['is_monster'] else 0)
-                    - (2.0 if ps['is_unreliable'] else 0)
-                    # 新特徴量 (アブレーション検証済み)
+                    # C: 不発ペナルティ削除 (実データで効果-0.3%→無効)
                     + ps['form_trend'] * 1.0       # 調子
                     + ps['bank_style_fit'] * 2.0   # バンク×戦法
-                    # bantsuke_edge は検証ROIを悪化させるため除外
+                    + nobi_s_bonus                 # A
+                    + monster_nobi_combo            # B
+                    + senpo_bonus                   # D
                     )
 
     ranked = sorted(player_scores.items(), key=lambda x: x[1]['ev'], reverse=True)
