@@ -57,7 +57,7 @@ MAX_RESULT_RETRY = 5    # 結果取得リトライ回数
 
 
 STRATEGY_CFG = dict(
-    skip_chaos=True, min_top_ev=67,       # バックテスト最適値
+    skip_chaos=True, min_top_ev=72,       # EV72以上のみ (67-72帯は赤字のため除外)
     skip_low_bank=False, top_n_prob_bets=10,  # ハイブリッド: PL候補→シミュフィルタ(閾値5)
 )
 
